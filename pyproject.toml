@@ -59,6 +59,7 @@ Documentation = "https://github.com/tomanizer/excel-analyzer#readme"
 
 [project.scripts]
 excel-analyzer = "excel_analyzer.cli:main"
+excel-extractor = "excel_analyzer.extractor_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

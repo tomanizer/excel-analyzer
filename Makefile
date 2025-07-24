@@ -128,4 +128,20 @@ cli-dataframes:
 	excel-analyzer excel_files/mycoolsample.xlsx --dataframes --save-dfs --dfs-format excel --output-dir ./dataframe_results
 
 cli-verbose:
-	excel-analyzer excel_files/complex_model.xlsx --verbose --json --markdown --dataframes --save-dfs 
+	excel-analyzer excel_files/complex_model.xlsx --verbose --json --markdown --dataframes --save-dfs
+
+# Excel Extractor CLI examples
+extractor-help:
+	excel-extractor --help
+
+extractor-basic:
+	excel-extractor excel_files/mycoolsample.xlsx --markdown --json
+
+extractor-llm:
+	excel-extractor excel_files/enterprise_model.xlsx --llm-optimized --output-dir ./llm_reports
+
+extractor-batch:
+	excel-extractor "excel_files/*.xlsx" --output-dir ./extractor_batch --json --summary --batch --timing
+
+extractor-verbose:
+	excel-extractor excel_files/complex_model.xlsx --verbose --markdown --json --timing 

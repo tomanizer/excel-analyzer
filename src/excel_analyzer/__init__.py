@@ -20,10 +20,15 @@ __email__ = "thomas@example.com"
 
 from .excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
 from .cli import main as cli_main
+from .excel_extractor import ExcelExtractor, extract_excel_to_markdown
+from .extractor_cli import main as extractor_cli_main
 
 __all__ = [
     "analyze_workbook_final",
     "generate_markdown_report", 
     "extract_data_to_dataframes",
-    "cli_main"
+    "cli_main",
+    "ExcelExtractor",
+    "extract_excel_to_markdown",
+    "extractor_cli_main"
 ] 
