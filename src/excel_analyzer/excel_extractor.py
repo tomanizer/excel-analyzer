@@ -269,8 +269,8 @@ class ExcelExtractor:
                 'formula2': validation.formula2,
                 'allow_blank': validation.allowBlank,
                 'show_error_message': validation.showErrorMessage,
-                'error_title': validation.errorTitle,
-                'error_message': validation.errorMessage
+                'error_title': getattr(validation, 'errorTitle', None),
+                'error_message': getattr(validation, 'errorMessage', None)
             }
             validations.append(validation_info)
         
