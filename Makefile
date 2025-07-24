@@ -150,4 +150,23 @@ extractor-batch:
 	excel-extractor "excel_files/*.xlsx" --output-dir ./extractor_batch --json --summary --batch --timing
 
 extractor-verbose:
-	excel-extractor excel_files/complex_model.xlsx --verbose --markdown --json --timing 
+	excel-extractor excel_files/complex_model.xlsx --verbose --markdown --json --timing
+
+# Error Sniffer examples
+error-sniffer-help:
+	excel-error-sniffer --help
+
+error-sniffer-basic:
+	excel-error-sniffer excel_files/simple_model.xlsx --summary
+
+error-sniffer-full:
+	excel-error-sniffer excel_files/simple_model.xlsx --json --markdown --verbose --timing
+
+error-sniffer-high-severity:
+	excel-error-sniffer excel_files/simple_model.xlsx --severity high --summary
+
+error-sniffer-batch:
+	excel-error-sniffer "excel_files/*.xlsx" --output-dir ./error_reports --json --summary --verbose
+
+error-sniffer-comprehensive:
+	excel-error-sniffer excel_files/complex_model.xlsx --json --markdown --verbose --timing --output-dir ./error_reports 

@@ -22,6 +22,8 @@ from .excel_parser import analyze_workbook_final, generate_markdown_report, extr
 from .cli import main as cli_main
 from .excel_extractor import ExcelExtractor, extract_excel_to_markdown
 from .extractor_cli import main as extractor_cli_main
+from .excel_error_sniffer import ExcelErrorSniffer, sniff_excel_errors
+from .error_sniffer_cli import main as error_sniffer_cli_main
 
 __all__ = [
     "analyze_workbook_final",
@@ -30,5 +32,8 @@ __all__ = [
     "cli_main",
     "ExcelExtractor",
     "extract_excel_to_markdown",
-    "extractor_cli_main"
+    "extractor_cli_main",
+    "ExcelErrorSniffer",
+    "sniff_excel_errors",
+    "error_sniffer_cli_main"
 ] 
