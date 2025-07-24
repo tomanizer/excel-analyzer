@@ -150,4 +150,35 @@ extractor-batch:
 	excel-extractor "excel_files/*.xlsx" --output-dir ./extractor_batch --json --summary --batch --timing
 
 extractor-verbose:
-	excel-extractor excel_files/complex_model.xlsx --verbose --markdown --json --timing 
+	excel-extractor excel_files/complex_model.xlsx --verbose --markdown --json --timing
+
+# Click CLI examples
+click-help:
+	excel-analyzer-click --help
+
+click-parser-help:
+	excel-analyzer-click parser --help
+
+click-extractor-help:
+	excel-analyzer-click extractor --help
+
+click-analyze-help:
+	excel-analyzer-click analyze --help
+
+click-parser-basic:
+	excel-analyzer-click parser excel_files/simple_model.xlsx --summary
+
+click-parser-full:
+	excel-analyzer-click parser excel_files/simple_model.xlsx --json --markdown --dataframes --save-dfs
+
+click-extractor-basic:
+	excel-analyzer-click extractor excel_files/simple_model.xlsx --summary
+
+click-extractor-full:
+	excel-analyzer-click extractor excel_files/simple_model.xlsx --json --markdown --llm-optimized --timing
+
+click-analyze-comprehensive:
+	excel-analyzer-click analyze excel_files/simple_model.xlsx --json --markdown --dataframes --save-dfs --llm-optimized --timing
+
+click-batch:
+	excel-analyzer-click parser "excel_files/*.xlsx" --output-dir ./click_batch --json --summary --verbose 
