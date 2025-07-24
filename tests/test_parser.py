@@ -4,13 +4,9 @@ Tests for the Excel Parser module.
 """
 
 import pytest
-import sys
 from pathlib import Path
 
-# Add the parent directory to the path so we can import excel_parser
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
+from excel_analyzer.excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
 
 
 class TestExcelParser:

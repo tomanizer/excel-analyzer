@@ -58,10 +58,10 @@ Documentation = "https://github.com/tomanizer/excel-analyzer#readme"
 "Bug Tracker" = "https://github.com/tomanizer/excel-analyzer/issues"
 
 [project.scripts]
-excel-analyzer = "excel_parser:main"
+excel-analyzer = "excel_analyzer.excel_parser:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["*"]
 exclude = ["tests*", "docs*", "examples*", "reports*", "venv*"]
 

@@ -6,7 +6,7 @@ Runs the excel parser on all test files and provides a summary of results.
 """
 
 from pathlib import Path
-from excel_parser import analyze_workbook_final
+from excel_analyzer.excel_parser import analyze_workbook_final
 import sys
 import io
 from contextlib import redirect_stdout

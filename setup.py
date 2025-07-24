@@ -31,7 +31,8 @@ setup(
         "Source": "https://github.com/tomanizer/excel-analyzer",
         "Documentation": "https://github.com/tomanizer/excel-analyzer#readme",
     },
-    packages=find_packages(),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",

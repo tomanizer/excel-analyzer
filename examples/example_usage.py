@@ -7,7 +7,7 @@ to get structured data and work with pandas DataFrames.
 """
 
 from pathlib import Path
-from excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
+from excel_analyzer.excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
 import json
 
 def main():

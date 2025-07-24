@@ -47,13 +47,13 @@ test-cov:
 
 # Code Quality
 lint:
-	flake8 excel_parser.py excel_extractor.py examples/
+	flake8 src/excel_analyzer/ examples/
 
 format:
-	black excel_parser.py excel_extractor.py examples/
+	black src/excel_analyzer/ examples/
 
 type-check:
-	mypy excel_parser.py excel_extractor.py
+	mypy src/excel_analyzer/
 
 quality: format lint type-check test
 
@@ -78,7 +78,7 @@ docs:
 
 # Examples
 demo:
-	python excel_parser.py excel_files/mycoolsample.xlsx --json --markdown --dataframes
+	python -m excel_analyzer.excel_parser excel_files/mycoolsample.xlsx --json --markdown --dataframes
 
 demo-all:
 	python examples/demo_parser.py
@@ -105,13 +105,13 @@ update-deps:
 
 # Analysis examples
 analyze-simple:
-	python excel_parser.py excel_files/simple_model.xlsx --json --markdown
+	python -m excel_analyzer.excel_parser excel_files/simple_model.xlsx --json --markdown
 
 analyze-complex:
-	python excel_parser.py excel_files/complex_model.xlsx --json --markdown
+	python -m excel_analyzer.excel_parser excel_files/complex_model.xlsx --json --markdown
 
 analyze-enterprise:
-	python excel_parser.py excel_files/enterprise_model.xlsx --json --markdown
+	python -m excel_analyzer.excel_parser excel_files/enterprise_model.xlsx --json --markdown
 
 # Quick development cycle
 dev-cycle: format lint test
