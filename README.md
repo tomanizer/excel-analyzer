@@ -24,10 +24,36 @@ pip install -r requirements.txt
 
 ### Basic Usage
 ```bash
-# Analyze a single Excel file
-python excel_parser.py
+# Analyze a single Excel file (console output)
+python excel_parser.py test_files/mycoolsample.xlsx
 
-# The script will create sample files and demonstrate the analysis
+# Generate structured JSON data
+python excel_parser.py test_files/mycoolsample.xlsx --json
+
+# Generate markdown report
+python excel_parser.py test_files/mycoolsample.xlsx --markdown
+
+# Extract data to pandas DataFrames
+python excel_parser.py test_files/mycoolsample.xlsx --dataframes
+
+# All outputs at once
+python excel_parser.py test_files/mycoolsample.xlsx --json --markdown --dataframes
+```
+
+### Programmatic Usage
+```python
+from pathlib import Path
+from excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
+
+# Get structured analysis data
+file_path = Path("test_files/mycoolsample.xlsx")
+analysis_data = analyze_workbook_final(file_path, return_data=True)
+
+# Extract to pandas DataFrames
+dataframes = extract_data_to_dataframes(analysis_data, file_path)
+
+# Generate markdown report
+report = generate_markdown_report(analysis_data)
 ```
 
 ## 🎯 What It Does
@@ -37,37 +63,101 @@ This tool performs comprehensive structural analysis of Excel workbooks:
 ### ✅ Detects and Analyzes
 - **Formal Excel Tables** (ListObjects)
 - **Informal Data Islands** (contiguous data blocks)
+- **Pivot Tables** and their locations
 - **Named Ranges** and variables
 - **Data Validation Rules** (input cells)
 - **Charts** and their data sources
-- **Pivot Tables** and relationships
 - **External Workbook Links**
 - **VBA Macros** presence
 - **VLOOKUP/HLOOKUP** dependencies
 - **Cross-sheet formulas** and relationships
 
-### 📊 Sample Output
+### 📊 Output Formats
+
+#### 1. Console Analysis
 ```
---- Comprehensive Analysis for: financial_model.xlsx ---
+--- Comprehensive Analysis for: mycoolsample.xlsx ---
 
 VBA Project Detected: False
 
 Named Ranges:
-  - Discount_Rate: B5
-  - Growth_Rate: B6
-
-External Dependencies:
-  - C:\Models\SourceData.xlsx
+  - mycoolrange: [('Sheet2', '$C$2:$C$7')]
 
 --- Sheet-Level Analysis ---
 
-Processing Sheet: Assumptions
-  Data Validation Rules Found:
-    - B5: "0.01,0.02,0.03,0.04,0.05"
+Processing Sheet: Sheet1
+
+Processing Sheet: Sheet2
+  Pivot Tables Found:
+    - 'PivotTable1' at range H7:N9
 
 --- Discovered Data Tables & Islands ---
-  - AssumptionsTable (Formal Table) on sheet 'Assumptions' at range A1:B10
-  - RevenueCalc (Informal Data Island) on sheet 'Calculations' at range A1:D12
+  - Table1 (Formal Table) on sheet 'Sheet3' at range A1:E3
+  - Island_C2:D7 (Informal Data Island) on sheet 'Sheet2' at range C2:D7
+```
+
+#### 2. Structured JSON Data
+```json
+{
+  "metadata": {
+    "filename": "mycoolsample.xlsx",
+    "file_size_kb": 15.9,
+    "analysis_timestamp": "2025-07-24T22:54:24.730648"
+  },
+  "global_features": {
+    "vba_detected": false,
+    "external_links": [],
+    "named_ranges": {
+      "mycoolrange": [["Sheet2", "$C$2:$C$7"]]
+    }
+  },
+  "sheets": {
+    "Sheet2": {
+      "pivot_tables": [
+        {
+          "name": "PivotTable1",
+          "range": "H7:N9"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_sheets": 3,
+    "total_formal_tables": 1,
+    "total_pivot_tables": 1,
+    "total_data_islands": 6
+  }
+}
+```
+
+#### 3. Markdown Reports
+```markdown
+# Excel Analysis Report: mycoolsample.xlsx
+
+**Analysis Date:** 2025-07-24T22:54:24.730648
+**File Size:** 15.9 KB
+
+## 📊 Executive Summary
+- **Total Sheets:** 3
+- **Formal Tables:** 1
+- **Pivot Tables:** 1
+- **Data Islands:** 6
+
+## 📋 Sheet-by-Sheet Analysis
+### Sheet: Sheet2
+**Pivot Tables:**
+- `PivotTable1` at range `H7:N9`
+```
+
+#### 4. Pandas DataFrames
+```python
+# Extract all tables and data islands as DataFrames
+dataframes = extract_data_to_dataframes(analysis_data, file_path)
+
+# Access specific DataFrames
+table1_df = dataframes['Table1']  # Formal table
+island_df = dataframes['Island_C2:D7']  # Data island
+pivot_source_df = dataframes['Island_C2:D7']  # Pivot table source data
 ```
 
 ## 🏗️ Architecture
@@ -87,10 +177,10 @@ Processing Sheet: Assumptions
 ```
 cfo_models/
 ├── excel_parser.py          # Core analysis engine
+├── example_usage.py         # Usage examples
 ├── requirements.txt         # Python dependencies
 ├── venv/                   # Virtual environment
-├── sample_model.xlsx       # Test files
-├── final_model.xlsm        # Comprehensive test file
+├── test_files/             # Test Excel files
 ├── PROJECT_SUMMARY.md      # Detailed project documentation
 └── README.md              # This file
 ```
@@ -116,9 +206,13 @@ cfo_models/
 ### ✅ Completed
 - Core Excel parsing engine
 - Table discovery (formal + informal)
+- Pivot table detection
 - Relationship mapping
 - Advanced structure detection
 - Comprehensive profiling
+- Structured data output (JSON)
+- Markdown report generation
+- Pandas DataFrame extraction
 
 ### 🔄 In Progress
 - AI integration for semantic analysis
@@ -148,6 +242,4 @@ cfo_models/
 
 For questions or support, please [create an issue](link-to-issues) or contact the development team.
 
----
-
-**Note**: This is a work in progress. The tool is currently in development and may have limitations with complex Excel models. For production use, please ensure thorough testing with your specific models. 
+--- 
