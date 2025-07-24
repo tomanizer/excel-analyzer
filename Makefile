@@ -40,10 +40,16 @@ install-dev:
 
 # Testing
 test:
-	pytest
+	python -m pytest tests/ -v
+
+test-parser:
+	python -m pytest tests/test_parser.py -v
+
+test-extractor:
+	python -m pytest tests/test_extractor.py -v
 
 test-cov:
-	pytest --cov=excel_parser --cov-report=term-missing --cov-report=html
+	python -m pytest tests/ --cov=excel_analyzer --cov-report=term-missing --cov-report=html
 
 # Code Quality
 lint:

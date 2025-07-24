@@ -63,6 +63,17 @@ class ExcelExtractor:
         
         return self.extracted_data
     
+    def _load_workbook(self):
+        """Load the workbook for testing purposes."""
+        if not self.file_path.exists():
+            raise FileNotFoundError(f"File not found: {self.file_path}")
+        
+        return openpyxl.load_workbook(
+            self.file_path, 
+            data_only=False,  # Keep formulas
+            keep_vba=True
+        )
+    
     def _extract_metadata(self):
         """Extract file metadata."""
         self.extracted_data['metadata'] = {
@@ -417,6 +428,14 @@ class ExcelExtractor:
         """Convert extracted data to comprehensive markdown format."""
         md_lines = []
         
+        # Check if we have metadata (i.e., if extract_all was called)
+        if not self.extracted_data.get('metadata'):
+            md_lines.append("# Excel Workbook Analysis: No Data Available")
+            md_lines.append("")
+            md_lines.append("*No data has been extracted yet. Call extract_all() first.*")
+            md_lines.append("")
+            return "\n".join(md_lines)
+        
         # Header
         md_lines.append(f"# Excel Workbook Analysis: {self.extracted_data['metadata']['filename']}")
         md_lines.append("")
@@ -719,8 +738,8 @@ def extract_excel_to_markdown(file_path: Path, output_dir: Path = None) -> Tuple
     extractor.extract_all()
     
     # Save outputs
-    markdown_path = output_dir / f"{file_path.stem}_analysis.md"
-    json_path = output_dir / f"{file_path.stem}_data.json"
+    markdown_path = output_dir / f"{file_path.stem}_extractor_report.md"
+    json_path = output_dir / f"{file_path.stem}_extracted_data.json"
     
     extractor.save_markdown(markdown_path)
     extractor.save_json(json_path)
