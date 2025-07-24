@@ -1,6 +1,6 @@
 # Excel Analysis Report: mycoolsample.xlsx
 
-**Analysis Date:** 2025-07-24T22:55:45.631294
+**Analysis Date:** 2025-07-24T23:13:48.277414
 **File Size:** 15.9 KB
 
 ## 📊 Executive Summary
@@ -24,8 +24,8 @@
 ### Sheet: Sheet1
 
 **Data Islands:**
-- `Island_I12:M13` at range `I12:M13`
 - `Island_C6:G8` at range `C6:G8`
+- `Island_I12:M13` at range `I12:M13`
 - `Island_C4:C4` at range `C4:C4`
 
 ### Sheet: Sheet2
@@ -51,8 +51,8 @@ ref='H7:N9', firstHeaderRow=1, firstDataRow=2, firstDataCol=1, rowPageCount=None
 
 | Name | Type | Sheet | Range |
 |------|------|-------|-------|
-| Island_I12:M13 | Informal Data Island | Sheet1 | `I12:M13` |
 | Island_C6:G8 | Informal Data Island | Sheet1 | `C6:G8` |
+| Island_I12:M13 | Informal Data Island | Sheet1 | `I12:M13` |
 | Island_C4:C4 | Informal Data Island | Sheet1 | `C4:C4` |
 | Island_C2:D7 | Informal Data Island | Sheet2 | `C2:D7` |
 | Island_J2:J2 | Informal Data Island | Sheet2 | `J2:J2` |

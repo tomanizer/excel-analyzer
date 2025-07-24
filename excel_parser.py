@@ -437,7 +437,8 @@ def extract_data_to_dataframes(analysis_data: dict, file_path: Path) -> dict:
     return dataframes
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the Excel Analyzer CLI."""
     import sys
     import json
     
@@ -488,15 +489,15 @@ if __name__ == "__main__":
         print("=" * 50)
         print()
         print("Usage:")
-        print("  python excel_parser.py <file.xlsx>                    # Standard analysis")
-        print("  python excel_parser.py <file.xlsx> --json             # Save structured data as JSON")
-        print("  python excel_parser.py <file.xlsx> --markdown         # Generate markdown report")
-        print("  python excel_parser.py <file.xlsx> --dataframes       # Extract data to pandas DataFrames")
-        print("  python excel_parser.py <file.xlsx> --json --markdown  # Multiple outputs")
+        print("  excel-analyzer <file.xlsx>                    # Standard analysis")
+        print("  excel-analyzer <file.xlsx> --json             # Save structured data as JSON")
+        print("  excel-analyzer <file.xlsx> --markdown         # Generate markdown report")
+        print("  excel-analyzer <file.xlsx> --dataframes       # Extract data to pandas DataFrames")
+        print("  excel-analyzer <file.xlsx> --json --markdown  # Multiple outputs")
         print()
         print("Examples:")
-        print("  python excel_parser.py excel_files/mycoolsample.xlsx")
-        print("  python excel_parser.py excel_files/mycoolsample.xlsx --json --markdown")
+        print("  excel-analyzer excel_files/mycoolsample.xlsx")
+        print("  excel-analyzer excel_files/mycoolsample.xlsx --json --markdown")
         print()
         
         # Create dummy files for demonstration
@@ -544,3 +545,7 @@ if __name__ == "__main__":
         print(f"Dummy files '{main_file.name}' and '{ext_file.name}' created.")
 
         analyze_workbook_final(main_file)
+
+
+if __name__ == "__main__":
+    main()
