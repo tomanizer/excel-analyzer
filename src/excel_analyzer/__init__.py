@@ -19,9 +19,11 @@ __author__ = "Thomas"
 __email__ = "thomas@example.com"
 
 from .excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
+from .cli import main as cli_main
 
 __all__ = [
     "analyze_workbook_final",
     "generate_markdown_report", 
-    "extract_data_to_dataframes"
+    "extract_data_to_dataframes",
+    "cli_main"
 ] 

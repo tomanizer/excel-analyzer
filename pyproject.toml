@@ -58,7 +58,7 @@ Documentation = "https://github.com/tomanizer/excel-analyzer#readme"
 "Bug Tracker" = "https://github.com/tomanizer/excel-analyzer/issues"
 
 [project.scripts]
-excel-analyzer = "excel_analyzer.excel_parser:main"
+excel-analyzer = "excel_analyzer.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

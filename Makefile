@@ -78,7 +78,7 @@ docs:
 
 # Examples
 demo:
-	python -m excel_analyzer.excel_parser excel_files/mycoolsample.xlsx --json --markdown --dataframes
+	excel-analyzer excel_files/mycoolsample.xlsx --json --markdown --dataframes --save-dfs
 
 demo-all:
 	python examples/demo_parser.py
@@ -105,14 +105,27 @@ update-deps:
 
 # Analysis examples
 analyze-simple:
-	python -m excel_analyzer.excel_parser excel_files/simple_model.xlsx --json --markdown
+	excel-analyzer excel_files/simple_model.xlsx --json --markdown --summary
 
 analyze-complex:
-	python -m excel_analyzer.excel_parser excel_files/complex_model.xlsx --json --markdown
+	excel-analyzer excel_files/complex_model.xlsx --json --markdown --summary
 
 analyze-enterprise:
-	python -m excel_analyzer.excel_parser excel_files/enterprise_model.xlsx --json --markdown
+	excel-analyzer excel_files/enterprise_model.xlsx --json --markdown --summary
 
 # Quick development cycle
 dev-cycle: format lint test
-	@echo "Development cycle complete!" 
+	@echo "Development cycle complete!"
+
+# CLI examples
+cli-help:
+	excel-analyzer --help
+
+cli-batch:
+	excel-analyzer "excel_files/*.xlsx" --output-dir ./batch_results --json --summary --batch
+
+cli-dataframes:
+	excel-analyzer excel_files/mycoolsample.xlsx --dataframes --save-dfs --dfs-format excel --output-dir ./dataframe_results
+
+cli-verbose:
+	excel-analyzer excel_files/complex_model.xlsx --verbose --json --markdown --dataframes --save-dfs 
