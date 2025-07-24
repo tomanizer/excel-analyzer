@@ -6,11 +6,21 @@ This document provides an overview of the organized project structure for the Ex
 
 ```
 cfo_models/
-├── 📄 excel_parser.py          # Core analysis engine
-├── 📄 excel_extractor.py       # Advanced extraction tool  
+├── 📁 src/                    # Source code directory
+│   └── 📁 excel_analyzer/     # Main package
+│       ├── 📄 __init__.py     # Package initialization
+│       ├── 📄 excel_parser.py # Core analysis engine
+│       └── 📄 excel_extractor.py # Advanced extraction tool
 ├── 📄 requirements.txt         # Python dependencies
 ├── 📄 README.md               # Main project documentation
 ├── 📄 PROJECT_STRUCTURE.md    # This file
+├── 📄 setup.py                # Package installation
+├── 📄 pyproject.toml          # Modern Python packaging
+├── 📄 LICENSE                 # MIT License
+├── 📄 CHANGELOG.md            # Version history
+├── 📄 CONTRIBUTING.md         # Contributor guidelines
+├── 📄 MANIFEST.in             # Package distribution
+├── 📄 Makefile                # Development tasks
 ├── 📁 venv/                   # Virtual environment
 ├── 📁 excel_files/            # Excel files for analysis
 │   ├── 📄 simple_model.xlsx
@@ -36,10 +46,13 @@ cfo_models/
 │   ├── 📄 intermediate_model_data_demo_prompts.md
 │   ├── 📄 intermediate_model_data_llm_prompts.md
 │   └── 📄 README.md                  # Excel files documentation
-└── 📁 reports/                # Generated analysis reports
+├── 📁 reports/                # Generated analysis reports
     ├── 📄 mycoolsample.json
     ├── 📄 mycoolsample.analysis.json
     └── 📄 intermediate_model_data.json
+└── 📁 tests/                  # Test suite
+    ├── 📄 __init__.py
+    └── 📄 test_parser.py
 ```
 
 ## 🎯 Purpose of Each Directory
@@ -66,17 +79,27 @@ cfo_models/
 
 ## 🔧 Core Files
 
-### 📄 `excel_parser.py`
+### 📁 `src/excel_analyzer/`
+- **Main package directory**
+- Contains all core functionality
+- Proper Python package structure
+
+### 📄 `src/excel_analyzer/excel_parser.py`
 - Main analysis engine
 - CLI interface
 - Structured data output
 - Markdown report generation
 - Pandas DataFrame extraction
 
-### 📄 `excel_extractor.py`
+### 📄 `src/excel_analyzer/excel_extractor.py`
 - Advanced extraction tool
 - Comprehensive data extraction
 - LLM-ready output formats
+
+### 📄 `src/excel_analyzer/__init__.py`
+- Package initialization
+- Public API exports
+- Version information
 
 ### 📄 `requirements.txt`
 - Python dependencies
@@ -88,16 +111,19 @@ cfo_models/
 ### Command Line
 ```bash
 # Basic analysis
-python excel_parser.py excel_files/mycoolsample.xlsx
+excel-analyzer excel_files/mycoolsample.xlsx
 
 # Generate reports
-python excel_parser.py excel_files/mycoolsample.xlsx --json --markdown --dataframes
+excel-analyzer excel_files/mycoolsample.xlsx --json --markdown --dataframes
+
+# Using Python module
+python -m excel_analyzer.excel_parser excel_files/mycoolsample.xlsx
 ```
 
 ### Programmatic
 ```python
 from pathlib import Path
-from excel_parser import analyze_workbook_final
+from excel_analyzer.excel_parser import analyze_workbook_final
 
 # Analyze file
 file_path = Path("excel_files/mycoolsample.xlsx")
@@ -112,9 +138,10 @@ analysis_data = analyze_workbook_final(file_path, return_data=True)
 - Generated files: `final_model.xlsm`, `external_source.xlsx`
 
 ### Python Files
-- Core tools: `excel_parser.py`, `excel_extractor.py`
+- Core tools: `src/excel_analyzer/excel_parser.py`, `src/excel_analyzer/excel_extractor.py`
 - Examples: `example_usage.py`
 - Demos: `demo_*.py`
+- Tests: `tests/test_*.py`
 
 ### Documentation
 - Main docs: `README.md`, `PROJECT_SUMMARY.md`
