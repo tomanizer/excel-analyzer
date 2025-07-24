@@ -25,19 +25,19 @@ pip install -r requirements.txt
 ### Basic Usage
 ```bash
 # Analyze a single Excel file (console output)
-python excel_parser.py test_files/mycoolsample.xlsx
+python excel_parser.py excel_files/mycoolsample.xlsx
 
 # Generate structured JSON data
-python excel_parser.py test_files/mycoolsample.xlsx --json
+python excel_parser.py excel_files/mycoolsample.xlsx --json
 
 # Generate markdown report
-python excel_parser.py test_files/mycoolsample.xlsx --markdown
+python excel_parser.py excel_files/mycoolsample.xlsx --markdown
 
 # Extract data to pandas DataFrames
-python excel_parser.py test_files/mycoolsample.xlsx --dataframes
+python excel_parser.py excel_files/mycoolsample.xlsx --dataframes
 
 # All outputs at once
-python excel_parser.py test_files/mycoolsample.xlsx --json --markdown --dataframes
+python excel_parser.py excel_files/mycoolsample.xlsx --json --markdown --dataframes
 ```
 
 ### Programmatic Usage
@@ -46,7 +46,7 @@ from pathlib import Path
 from excel_parser import analyze_workbook_final, generate_markdown_report, extract_data_to_dataframes
 
 # Get structured analysis data
-file_path = Path("test_files/mycoolsample.xlsx")
+file_path = Path("excel_files/mycoolsample.xlsx")
 analysis_data = analyze_workbook_final(file_path, return_data=True)
 
 # Extract to pandas DataFrames
@@ -177,11 +177,13 @@ pivot_source_df = dataframes['Island_C2:D7']  # Pivot table source data
 ```
 cfo_models/
 ├── excel_parser.py          # Core analysis engine
-├── example_usage.py         # Usage examples
+├── excel_extractor.py       # Advanced extraction tool
 ├── requirements.txt         # Python dependencies
 ├── venv/                   # Virtual environment
-├── test_files/             # Test Excel files
-├── PROJECT_SUMMARY.md      # Detailed project documentation
+├── excel_files/            # Excel files for analysis
+├── examples/               # Example scripts and demos
+├── docs/                   # Documentation files
+├── reports/                # Generated analysis reports
 └── README.md              # This file
 ```
 

@@ -458,14 +458,16 @@ if __name__ == "__main__":
             
             if generate_json:
                 # Save JSON data
-                json_file = file_path.with_suffix('.json')
+                json_file = Path("reports") / f"{file_path.stem}.json"
+                json_file.parent.mkdir(exist_ok=True)
                 with open(json_file, 'w', encoding='utf-8') as f:
                     json.dump(analysis_data, f, indent=2, default=str)
                 print(f"JSON data saved to: {json_file}")
             
             if generate_markdown:
                 # Generate markdown report
-                markdown_file = file_path.with_suffix('.md')
+                markdown_file = Path("reports") / f"{file_path.stem}.md"
+                markdown_file.parent.mkdir(exist_ok=True)
                 report = generate_markdown_report(analysis_data, markdown_file)
                 print(f"Markdown report saved to: {markdown_file}")
             
@@ -493,8 +495,8 @@ if __name__ == "__main__":
         print("  python excel_parser.py <file.xlsx> --json --markdown  # Multiple outputs")
         print()
         print("Examples:")
-        print("  python excel_parser.py test_files/mycoolsample.xlsx")
-        print("  python excel_parser.py test_files/mycoolsample.xlsx --json --markdown")
+        print("  python excel_parser.py excel_files/mycoolsample.xlsx")
+        print("  python excel_parser.py excel_files/mycoolsample.xlsx --json --markdown")
         print()
         
         # Create dummy files for demonstration

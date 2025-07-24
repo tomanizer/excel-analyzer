@@ -743,4 +743,4 @@ if __name__ == "__main__":
             print(f"File not found: {file_path}")
     else:
         print("Usage: python excel_extractor.py <excel_file_path>")
-        print("\nExample: python excel_extractor.py test_files/complex_model.xlsx") 
+        print("\nExample: python excel_extractor.py excel_files/complex_model.xlsx") 

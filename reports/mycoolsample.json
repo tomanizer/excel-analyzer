@@ -2,8 +2,8 @@
   "metadata": {
     "filename": "mycoolsample.xlsx",
     "file_size_kb": 15.8876953125,
-    "file_path": "test_files/mycoolsample.xlsx",
-    "analysis_timestamp": "2025-07-24T22:55:45.631294"
+    "file_path": "excel_files/mycoolsample.xlsx",
+    "analysis_timestamp": "2025-07-24T23:03:30.995113"
   },
   "global_features": {
     "vba_detected": false,
@@ -26,44 +26,44 @@
       "data_validation": [],
       "data_islands": [
         {
-          "name": "Island_I12:M13",
-          "type": "Informal Data Island",
-          "range": "I12:M13",
-          "sheet": "Sheet1",
-          "cells": [
-            "K13",
-            "L12",
-            "M12",
-            "M13",
-            "K12",
-            "L13",
-            "I12",
-            "I13",
-            "J13",
-            "J12"
-          ]
-        },
-        {
           "name": "Island_C6:G8",
           "type": "Informal Data Island",
           "range": "C6:G8",
           "sheet": "Sheet1",
           "cells": [
-            "D7",
-            "F6",
-            "D6",
-            "F8",
-            "E7",
-            "G8",
-            "E8",
-            "C7",
-            "C6",
-            "C8",
-            "G7",
             "D8",
             "E6",
+            "D7",
+            "F7",
+            "C6",
+            "E8",
+            "C7",
+            "F6",
+            "D6",
             "G6",
-            "F7"
+            "F8",
+            "G7",
+            "E7",
+            "G8",
+            "C8"
+          ]
+        },
+        {
+          "name": "Island_I12:M13",
+          "type": "Informal Data Island",
+          "range": "I12:M13",
+          "sheet": "Sheet1",
+          "cells": [
+            "I12",
+            "M12",
+            "J13",
+            "I13",
+            "J12",
+            "L12",
+            "K13",
+            "L13",
+            "K12",
+            "M13"
           ]
         },
         {
@@ -96,18 +96,18 @@
           "range": "C2:D7",
           "sheet": "Sheet2",
           "cells": [
-            "D4",
-            "D5",
             "D7",
+            "D4",
             "C4",
-            "C3",
             "C2",
-            "C7",
             "D2",
-            "C6",
+            "C7",
             "D3",
             "D6",
-            "C5"
+            "C5",
+            "C3",
+            "D5",
+            "C6"
           ]
         },
         {
@@ -141,8 +141,8 @@
           "range": "C9:D9",
           "sheet": "Sheet3",
           "cells": [
-            "C9",
-            "D9"
+            "D9",
+            "C9"
           ]
         }
       ]
@@ -158,44 +158,44 @@
   },
   "all_tables": [
     {
-      "name": "Island_I12:M13",
-      "type": "Informal Data Island",
-      "range": "I12:M13",
-      "sheet": "Sheet1",
-      "cells": [
-        "K13",
-        "L12",
-        "M12",
-        "M13",
-        "K12",
-        "L13",
-        "I12",
-        "I13",
-        "J13",
-        "J12"
-      ]
-    },
-    {
       "name": "Island_C6:G8",
       "type": "Informal Data Island",
       "range": "C6:G8",
       "sheet": "Sheet1",
       "cells": [
-        "D7",
-        "F6",
-        "D6",
-        "F8",
-        "E7",
-        "G8",
-        "E8",
-        "C7",
-        "C6",
-        "C8",
-        "G7",
         "D8",
         "E6",
+        "D7",
+        "F7",
+        "C6",
+        "E8",
+        "C7",
+        "F6",
+        "D6",
         "G6",
-        "F7"
+        "F8",
+        "G7",
+        "E7",
+        "G8",
+        "C8"
+      ]
+    },
+    {
+      "name": "Island_I12:M13",
+      "type": "Informal Data Island",
+      "range": "I12:M13",
+      "sheet": "Sheet1",
+      "cells": [
+        "I12",
+        "M12",
+        "J13",
+        "I13",
+        "J12",
+        "L12",
+        "K13",
+        "L13",
+        "K12",
+        "M13"
       ]
     },
     {
@@ -213,18 +213,18 @@
       "range": "C2:D7",
       "sheet": "Sheet2",
       "cells": [
-        "D4",
-        "D5",
         "D7",
+        "D4",
         "C4",
-        "C3",
         "C2",
-        "C7",
         "D2",
-        "C6",
+        "C7",
         "D3",
         "D6",
-        "C5"
+        "C5",
+        "C3",
+        "D5",
+        "C6"
       ]
     },
     {
@@ -248,8 +248,8 @@
       "range": "C9:D9",
       "sheet": "Sheet3",
       "cells": [
-        "C9",
-        "D9"
+        "D9",
+        "C9"
       ]
     }
   ]

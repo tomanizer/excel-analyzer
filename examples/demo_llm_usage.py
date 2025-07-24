@@ -383,7 +383,7 @@ def main():
     """Main function to demonstrate LLM usage."""
     if len(sys.argv) < 2:
         print("Usage: python demo_llm_usage.py <json_file_path>")
-        print("Example: python demo_llm_usage.py test_files/intermediate_model_data.json")
+        print("Example: python demo_llm_usage.py reports/intermediate_model_data.json")
         return
     
     json_file_path = Path(sys.argv[1])

@@ -14,7 +14,7 @@ def main():
     """Demonstrate the new Excel analyzer functionality."""
     
     # File to analyze
-    file_path = Path("test_files/mycoolsample.xlsx")
+    file_path = Path("excel_files/mycoolsample.xlsx")
     
     print("🔍 Excel Analyzer - Programmatic Usage Example")
     print("=" * 50)
@@ -55,7 +55,8 @@ def main():
     
     # 4. Save structured data as JSON
     print("4. 💾 Saving structured data as JSON...")
-    json_file = file_path.with_suffix('.analysis.json')
+    json_file = Path("reports") / f"{file_path.stem}.analysis.json"
+    json_file.parent.mkdir(exist_ok=True)
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(analysis_data, f, indent=2, default=str)
     print(f"   ✅ Saved to {json_file}")

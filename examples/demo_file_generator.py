@@ -447,8 +447,8 @@ def create_enterprise_model() -> Workbook:
     return wb
 
 def create_test_files():
-    """Create all test files in the test_files directory."""
-    test_dir = Path("test_files")
+    """Create all test files in the excel_files directory."""
+    test_dir = Path("excel_files")
     test_dir.mkdir(exist_ok=True)
     
     # Create test files with varying complexity

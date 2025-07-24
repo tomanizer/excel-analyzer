@@ -13,16 +13,16 @@ from contextlib import redirect_stdout
 
 def test_all_files():
     """Test the excel parser on all test files."""
-    test_dir = Path("test_files")
+    test_dir = Path("excel_files")
     
     if not test_dir.exists():
-        print("Test files directory not found. Please run test_file_generator.py first.")
+        print("Excel files directory not found. Please run demo_file_generator.py first.")
         return
     
     test_files = list(test_dir.glob("*.xlsx"))
     
     if not test_files:
-        print("No test files found in test_files directory.")
+        print("No Excel files found in excel_files directory.")
         return
     
     print("Testing Excel Parser on All Test Files")
