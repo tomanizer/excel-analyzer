@@ -505,8 +505,8 @@ class CircularNamedRangesDetector(ErrorDetector):
                 # Found a cycle
                 cycle_start = path.index(node)
                 cycle = path[cycle_start:] + [node]
-                # Only add if it's a real cycle (length > 2, meaning at least 2 different nodes)
-                if len(set(cycle[:-1])) > 1:  # More than one unique node (excluding the duplicate at the end)
+                # Add cycles with at least 2 nodes (including self-references)
+                if len(cycle) >= 2:  # Allow self-references and multi-node cycles
                     cycles.append(cycle)
                 return
             
