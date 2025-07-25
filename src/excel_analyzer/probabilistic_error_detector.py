@@ -1651,6 +1651,88 @@ class IncompleteDragFormulaDetector(ErrorDetector):
         return results
 
 
+class FalseRangeEndDetectionDetector(ErrorDetector):
+    """
+    Detector for false range end detection (empty cell trap).
+    
+    Algorithm:
+    1. For each column, find contiguous blocks of non-empty cells
+    2. Identify empty cells in the middle of a data range
+    3. Check if formulas only cover up to the first empty cell
+    4. Flag if data exists after the gap but formulas stop at the gap
+    5. Calculate probability based on severity
+    """
+    def __init__(self):
+        super().__init__(
+            name="false_range_end_detection",
+            description="Empty cell in the middle of a data range causes formulas to stop early (false range end)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for col in range(1, max_col + 1):
+                data_rows = []
+                formula_rows = []
+                for row in range(1, max_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.value is not None:
+                        data_rows.append(row)
+                    if cell.data_type == 'f' and cell.value:
+                        formula_rows.append(row)
+                if not data_rows or not formula_rows:
+                    continue
+                # Find the first empty cell in the data range
+                min_data_row = min(data_rows)
+                max_data_row = max(data_rows)
+                empty_in_middle = None
+                for row in range(min_data_row, max_data_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.value is None:
+                        empty_in_middle = row
+                        break
+                if empty_in_middle is None:
+                    continue  # No gap in the middle
+                # Check if there is data after the gap
+                data_after_gap = [row for row in range(empty_in_middle + 1, max_data_row + 1) if sheet.cell(row=row, column=col).value is not None]
+                if not data_after_gap:
+                    continue  # No data after gap
+                # Find missing formulas after the gap
+                formula_rows_set = set(formula_rows)
+                missing_formula_rows = set(row for row in range(empty_in_middle + 1, max_data_row + 1) if row not in formula_rows_set and sheet.cell(row=row, column=col).value is not None)
+                if not missing_formula_rows:
+                    continue
+                # Probability calculation
+                gap_size = len(missing_formula_rows)
+                if gap_size > 2:
+                    probability = 0.9
+                elif gap_size > 0:
+                    probability = 0.6
+                else:
+                    probability = 0.3
+                from openpyxl.utils import get_column_letter
+                col_letter = get_column_letter(col)
+                results.append(ErrorDetectionResult(
+                    error_type=self.name,
+                    description=f"False range end detected in column {col_letter} on sheet {sheet_name}; missing formulas after empty cell at row {empty_in_middle}: {sorted(missing_formula_rows)}",
+                    probability=probability,
+                    severity=self.severity if probability >= 0.6 else ErrorSeverity.LOW,
+                    location=f"{sheet_name}!{col_letter}{min_data_row}:{col_letter}{max_data_row}",
+                    details={
+                        'column': col_letter,
+                        'empty_in_middle': empty_in_middle,
+                        'data_after_gap': data_after_gap,
+                        'missing_formula_rows': sorted(missing_formula_rows)
+                    },
+                    suggested_fix="Check for empty cells in the middle of data ranges and ensure formulas cover all data rows."
+                ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1685,6 +1767,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(ExternalDataConnectionFailuresDetector())
     sniffer.register_detector(PrecisionErrorsInFinancialCalculationsDetector())
     sniffer.register_detector(IncompleteDragFormulaDetector())
+    sniffer.register_detector(FalseRangeEndDetectionDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
