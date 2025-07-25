@@ -1868,6 +1868,83 @@ class FormulaBoundaryMismatchDetector(ErrorDetector):
         return results
 
 
+class CopyPasteFormulaGapsDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="copy_paste_formula_gaps",
+            description="Gaps in formula sequences due to copy-paste errors (missing formulas in expected locations)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for col in range(1, max_col + 1):
+                formula_rows = []
+                non_formula_rows = []
+                formulas = {}
+                for row in range(1, max_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula_rows.append(row)
+                        formulas[row] = cell.value
+                    elif cell.value is not None:
+                        non_formula_rows.append(row)
+                if len(formula_rows) < 3:
+                    continue  # Need at least 3 formulas to detect gaps
+                # Find gaps in formula sequences
+                formula_rows.sort()
+                gaps = []
+                for i in range(len(formula_rows) - 1):
+                    current_row = formula_rows[i]
+                    next_row = formula_rows[i + 1]
+                    if next_row - current_row > 1:
+                        # Check if there are non-formula cells in the gap
+                        gap_cells = [r for r in range(current_row + 1, next_row) if r in non_formula_rows]
+                        if gap_cells:
+                            gaps.append((current_row, next_row, gap_cells))
+                for start_row, end_row, gap_cells in gaps:
+                    # Check if surrounding formulas are similar
+                    start_formula = formulas[start_row]
+                    end_formula = formulas[end_row]
+                    if self._are_formulas_similar(start_formula, end_formula):
+                        probability = 0.8 if len(gap_cells) <= 2 else 0.6
+                        from openpyxl.utils import get_column_letter
+                        col_letter = get_column_letter(col)
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"Formula gap detected in column {col_letter} on sheet {sheet_name} between rows {start_row} and {end_row}; missing formulas in rows {gap_cells}.",
+                            probability=probability,
+                            severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                            location=f"{sheet_name}!{col_letter}{start_row}:{col_letter}{end_row}",
+                            details={
+                                'column': col_letter,
+                                'start_row': start_row,
+                                'end_row': end_row,
+                                'gap_cells': gap_cells,
+                                'start_formula': start_formula,
+                                'end_formula': end_formula
+                            },
+                            suggested_fix=f"Check for missing formulas in rows {gap_cells}; consider copying the formula pattern from adjacent cells."
+                        ))
+        return results
+
+    def _are_formulas_similar(self, formula1: str, formula2: str) -> bool:
+        """Check if two formulas follow a similar pattern (e.g., incrementing row references)."""
+        # Simple heuristic: check if formulas have similar structure
+        # This could be enhanced with more sophisticated pattern matching
+        if not formula1 or not formula2:
+            return False
+        # Remove cell references and compare structure
+        import re
+        clean1 = re.sub(r'[A-Z]+\d+', 'CELL', formula1)
+        clean2 = re.sub(r'[A-Z]+\d+', 'CELL', formula2)
+        return clean1 == clean2
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1905,6 +1982,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(FalseRangeEndDetectionDetector())
     sniffer.register_detector(PartialFormulaPropagationDetector())
     sniffer.register_detector(FormulaBoundaryMismatchDetector())
+    sniffer.register_detector(CopyPasteFormulaGapsDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
