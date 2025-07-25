@@ -353,6 +353,940 @@ class HiddenDataInRangesDetector(ErrorDetector):
         return min(base_prob, 1.0)
 
 
+class CircularNamedRangesDetector(ErrorDetector):
+    """
+    Detector for circular references in named ranges.
+    
+    Algorithm:
+    1. Extract all named ranges from the workbook
+    2. Parse each named range's formula to identify dependencies
+    3. Build a dependency graph
+    4. Detect cycles using graph algorithms
+    5. Calculate probability based on cycle characteristics
+    """
+    
+    def __init__(self):
+        super().__init__(
+            name="circular_named_ranges",
+            description="Circular references in named ranges that can cause infinite calculation loops",
+            severity=ErrorSeverity.HIGH
+        )
+    
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        """Detect circular references in named ranges."""
+        results = []
+        
+        # Extract all named ranges
+        named_ranges = self._extract_named_ranges(workbook)
+        
+        if not named_ranges:
+            return results
+        
+        # Build dependency graph
+        dependency_graph = self._build_dependency_graph(named_ranges)
+        
+        # Detect cycles
+        cycles = self._detect_cycles(dependency_graph)
+        
+        # Generate results for each cycle
+        for cycle in cycles:
+            probability = self._calculate_circular_probability(cycle, named_ranges, dependency_graph)
+            
+            if probability > 0:
+                # Get formulas for the cycle
+                cycle_formulas = {name: named_ranges[name]['formula'] for name in cycle}
+                
+                results.append(ErrorDetectionResult(
+                    error_type=self.name,
+                    description=f"Circular reference detected: {' → '.join(cycle)} → {cycle[0]}",
+                    probability=probability,
+                    severity=self.severity,
+                    location=f"NamedRanges: {', '.join(cycle[:-1])}",  # Exclude the duplicate at the end
+                    details={
+                        'cycle': cycle,
+                        'cycle_length': len(cycle),
+                        'formulas': cycle_formulas,
+                        'dependency_graph': dependency_graph
+                    },
+                    suggested_fix="Break the circular dependency by introducing intermediate calculations or using iterative calculation settings"
+                ))
+        
+        return results
+    
+    def _extract_named_ranges(self, workbook: openpyxl.Workbook) -> Dict[str, Dict[str, Any]]:
+        """Extract all named ranges and their formulas."""
+        named_ranges = {}
+        
+        for name in workbook.defined_names:
+            try:
+                # Get the DefinedName object
+                defined_name = workbook.defined_names[name]
+                
+                # Get the formula/reference
+                formula = defined_name.attr_text if hasattr(defined_name, 'attr_text') else str(defined_name)
+                
+                named_ranges[name] = {
+                    'formula': formula,
+                    'scope': defined_name.localSheetId if hasattr(defined_name, 'localSheetId') else None,
+                    'comment': defined_name.comment if hasattr(defined_name, 'comment') else None
+                }
+            except Exception as e:
+                logger.warning(f"Could not extract named range {name}: {e}")
+                continue
+        
+        return named_ranges
+    
+    def _parse_named_range_formula(self, formula: str) -> List[str]:
+        """Parse a named range formula to extract dependencies."""
+        dependencies = []
+        
+        if not formula or not isinstance(formula, str):
+            return dependencies
+        
+        # Remove leading '=' if present
+        if formula.startswith('='):
+            formula = formula[1:]
+        
+        # Extract named range references using regex
+        import re
+        
+        # Pattern for named range references
+        # Matches: standalone names, names in functions, names in operations
+        patterns = [
+            r'\b([A-Za-z_][A-Za-z0-9_]*)\b',  # Basic named range pattern
+            r'([A-Za-z_][A-Za-z0-9_]*)',      # More permissive pattern
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, formula)
+            for match in matches:
+                # Filter out common Excel functions and keywords (case-sensitive)
+                excel_functions = {
+                    'SUM', 'AVERAGE', 'COUNT', 'MAX', 'MIN', 'IF', 'AND', 'OR',
+                    'TRUE', 'FALSE', 'PI', 'TODAY', 'NOW', 'ROW', 'COLUMN',
+                    'ABS', 'ROUND', 'INT', 'MOD', 'POWER', 'SQRT', 'LOG', 'LN',
+                    'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'RAND', 'RANDBETWEEN'
+                }
+                
+                # Filter out cell references (like A1, B2, etc.)
+                is_cell_reference = (
+                    len(match) >= 2 and 
+                    match[0].isalpha() and 
+                    match[1:].isdigit()
+                )
+                
+                if (match not in excel_functions and 
+                    len(match) >= 1 and 
+                    not is_cell_reference):
+                    dependencies.append(match)
+        
+        return list(set(dependencies))  # Remove duplicates
+    
+    def _build_dependency_graph(self, named_ranges: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Build a dependency graph from named ranges."""
+        graph = {}
+        
+        for name, info in named_ranges.items():
+            dependencies = self._parse_named_range_formula(info['formula'])
+            # Only include dependencies that are actual named ranges
+            valid_dependencies = [dep for dep in dependencies if dep in named_ranges]
+            graph[name] = valid_dependencies
+        
+        return graph
+    
+    def _detect_cycles(self, graph: Dict[str, List[str]]) -> List[List[str]]:
+        """Detect cycles in the dependency graph using DFS."""
+        cycles = []
+        
+        def dfs(node: str, path: List[str], visited: set, rec_stack: set):
+            """Depth-first search to detect cycles."""
+            if node in rec_stack:
+                # Found a cycle
+                cycle_start = path.index(node)
+                cycle = path[cycle_start:] + [node]
+                # Only add if it's a real cycle (length > 2, meaning at least 2 different nodes)
+                if len(set(cycle[:-1])) > 1:  # More than one unique node (excluding the duplicate at the end)
+                    cycles.append(cycle)
+                return
+            
+            if node in visited:
+                return
+            
+            visited.add(node)
+            rec_stack.add(node)
+            path.append(node)
+            
+            for neighbor in graph.get(node, []):
+                dfs(neighbor, path.copy(), visited.copy(), rec_stack.copy())
+            
+            rec_stack.remove(node)
+        
+        # Run DFS from each node
+        for node in graph:
+            visited = set()
+            rec_stack = set()
+            dfs(node, [], visited, rec_stack)
+        
+        # Remove duplicate cycles (same cycle starting from different nodes)
+        unique_cycles = []
+        for cycle in cycles:
+            # Normalize cycle by starting from the lexicographically smallest node
+            cycle_nodes = cycle[:-1]  # Exclude the last node (duplicate of first)
+            min_node = min(cycle_nodes)
+            start_idx = cycle_nodes.index(min_node)
+            normalized_cycle = cycle_nodes[start_idx:] + cycle_nodes[:start_idx] + [min_node]
+            
+            # Check if this normalized cycle is already in unique_cycles
+            is_duplicate = False
+            for existing_cycle in unique_cycles:
+                existing_nodes = existing_cycle[:-1]
+                if set(existing_nodes) == set(cycle_nodes):
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_cycles.append(normalized_cycle)
+        
+        return unique_cycles
+    
+    def _calculate_circular_probability(self, cycle: List[str], named_ranges: Dict[str, Dict[str, Any]], graph: Dict[str, List[str]]) -> float:
+        """Calculate probability of circular reference being problematic."""
+        if not cycle:
+            return 0.0
+        
+        # Base probability based on cycle length
+        cycle_length = len(cycle)
+        if cycle_length == 2:
+            base_prob = 0.9  # Very high probability for 2-range cycles
+        elif cycle_length == 3:
+            base_prob = 0.8  # High probability for 3-range cycles
+        elif cycle_length == 4:
+            base_prob = 0.7  # Medium-high probability for 4-range cycles
+        else:
+            base_prob = 0.6  # Medium probability for longer cycles
+        
+        # Adjust based on formula complexity
+        complexity_factor = 0.0
+        for name in cycle:
+            formula = named_ranges[name]['formula']
+            # Count functions, operators, and references
+            function_count = formula.count('(') + formula.count(')')
+            operator_count = formula.count('+') + formula.count('-') + formula.count('*') + formula.count('/')
+            reference_count = len(self._parse_named_range_formula(formula))
+            
+            complexity = (function_count + operator_count + reference_count) / 10.0
+            complexity_factor = max(complexity_factor, complexity)
+        
+        base_prob += complexity_factor * 0.2
+        
+        # Adjust based on usage frequency (how many other named ranges depend on these)
+        usage_factor = 0.0
+        for name in cycle:
+            # Count how many other named ranges depend on this one
+            dependents = sum(1 for deps in graph.values() if name in deps)
+            usage_factor = max(usage_factor, dependents / 10.0)  # Normalize
+        
+        base_prob += usage_factor * 0.1
+        
+        # Check for aggregation functions in cycle (more dangerous)
+        aggregation_functions = ['SUM', 'AVERAGE', 'COUNT', 'MAX', 'MIN', 'SUMPRODUCT']
+        for name in cycle:
+            formula = named_ranges[name]['formula'].upper()
+            if any(func in formula for func in aggregation_functions):
+                base_prob += 0.1
+                break
+        
+        return min(base_prob, 1.0)
+
+
+class InconsistentDateFormatsDetector(ErrorDetector):
+    """
+    Detector for inconsistent date formats in date calculations.
+    
+    Algorithm:
+    1. Scan for formulas that perform date arithmetic or use date functions
+    2. Identify ranges/columns involved in date calculations
+    3. Analyze data types in those ranges (Excel date, text that looks like date, other)
+    4. Flag if a range contains a mix of true dates and text-formatted dates
+    5. Calculate probability based on proportion of inconsistencies
+    """
+    def __init__(self):
+        super().__init__(
+            name="inconsistent_date_formats",
+            description="Mixed date formats (text vs. actual dates) in date-based calculations",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            checked_ranges = set()
+            # 1. Scan all columns for mixed date types or all text dates
+            for col in range(1, sheet.max_column + 1):
+                col_letter = openpyxl.utils.get_column_letter(col)
+                if col_letter in checked_ranges:
+                    continue
+                checked_ranges.add(col_letter)
+                analysis = self._analyze_range(sheet, col_letter)
+                # Flag if mixed types OR all text dates (and at least 1 text date)
+                is_all_text_dates = analysis['text_date_count'] > 0 and analysis['date_count'] == 0
+                if analysis['mixed_types'] or is_all_text_dates:
+                    probability = self._calculate_probability(analysis, is_all_text_dates=is_all_text_dates)
+                    if probability > 0:
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"{'All text dates' if is_all_text_dates else 'Mixed date formats'} detected in column {col_letter} on sheet {sheet_name}",
+                            probability=probability,
+                            severity=self.severity,
+                            location=f"{sheet_name}!{col_letter}",
+                            details=analysis,
+                            suggested_fix="Convert all dates in the column to Excel date format for consistency"
+                        ))
+            # 2. Also scan columns referenced by date formulas (legacy logic)
+            date_formula_cells = self._find_date_formula_cells(sheet)
+            for cell in date_formula_cells:
+                referenced_ranges = self._extract_referenced_ranges(cell)
+                for rng in referenced_ranges:
+                    if rng in checked_ranges:
+                        continue
+                    checked_ranges.add(rng)
+                    analysis = self._analyze_range(sheet, rng)
+                    is_all_text_dates = analysis['text_date_count'] > 0 and analysis['date_count'] == 0
+                    if analysis['mixed_types'] or is_all_text_dates:
+                        probability = self._calculate_probability(analysis, is_all_text_dates=is_all_text_dates)
+                        if probability > 0:
+                            results.append(ErrorDetectionResult(
+                                error_type=self.name,
+                                description=f"{'All text dates' if is_all_text_dates else 'Mixed date formats'} detected in range {rng} on sheet {sheet_name}",
+                                probability=probability,
+                                severity=self.severity,
+                                location=f"{sheet_name}!{rng}",
+                                details=analysis,
+                                suggested_fix="Convert all dates in the range to Excel date format for consistency"
+                            ))
+        return results
+
+    def _find_date_formula_cells(self, sheet) -> List[openpyxl.cell.cell.Cell]:
+        """Find cells with formulas that perform date arithmetic or use date functions."""
+        date_functions = {'DATEDIF', 'DATE', 'YEAR', 'MONTH', 'DAY', 'EDATE', 'EOMONTH', 'TODAY', 'NOW', 'NETWORKDAYS', 'WORKDAY'}
+        date_formula_cells = []
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.data_type == 'f' and cell.value:
+                    formula = str(cell.value).upper()
+                    # Check for date functions or date arithmetic (e.g., +, -, with cell refs)
+                    if any(func in formula for func in date_functions) or self._is_date_arithmetic(formula):
+                        date_formula_cells.append(cell)
+        return date_formula_cells
+
+    def _is_date_arithmetic(self, formula: str) -> bool:
+        # Simple heuristic: look for + or - between cell references
+        import re
+        # e.g., =A1-B1 or =B2+30
+        return bool(re.search(r"[A-Z]+[0-9]+\s*[-+]\s*[A-Z0-9]+", formula))
+
+    def _extract_referenced_ranges(self, cell) -> List[str]:
+        # For simplicity, just extract all cell references in the formula
+        import re
+        formula = str(cell.value)
+        # Matches A1, B2, C10, etc.
+        refs = re.findall(r"[A-Z]+[0-9]+", formula)
+        # Group by column (e.g., all A1, A2, A3 -> A)
+        columns = set(ref[0] for ref in refs if len(ref) >= 2)
+        # For now, treat each column as a range (e.g., A)
+        return [f"{col}" for col in columns]
+
+    def _analyze_range(self, sheet, col: str) -> dict:
+        # Analyze all cells in the given column
+        from openpyxl.utils import column_index_from_string
+        col_idx = column_index_from_string(col)
+        date_count = 0
+        text_date_count = 0
+        other_count = 0
+        total = 0
+        text_date_examples = []
+        for row in sheet.iter_rows(min_col=col_idx, max_col=col_idx):
+            for cell in row:
+                if cell.value is None:
+                    continue
+                total += 1
+                if self._is_excel_date(cell):
+                    date_count += 1
+                elif self._looks_like_date(cell.value):
+                    text_date_count += 1
+                    if len(text_date_examples) < 3:
+                        text_date_examples.append(cell.value)
+                else:
+                    other_count += 1
+        mixed_types = date_count > 0 and text_date_count > 0
+        return {
+            'date_count': date_count,
+            'text_date_count': text_date_count,
+            'other_count': other_count,
+            'total': total,
+            'mixed_types': mixed_types,
+            'text_date_examples': text_date_examples
+        }
+
+    def _is_excel_date(self, cell) -> bool:
+        # openpyxl stores Excel dates as numbers with a date format
+        if cell.is_date:
+            return True
+        # Sometimes dates are stored as numbers with a date format
+        if cell.data_type == 'n' and cell.number_format and 'yy' in cell.number_format.lower():
+            return True
+        return False
+
+    def _looks_like_date(self, value) -> bool:
+        import re
+        # Match common date patterns: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, etc.
+        if not isinstance(value, str):
+            return False
+        patterns = [
+            r'\b\d{4}-\d{2}-\d{2}\b',  # 2023-01-01
+            r'\b\d{2}/\d{2}/\d{4}\b',  # 01/01/2023
+            r'\b\d{1,2} [A-Za-z]{3,9} \d{4}\b',  # 1 Jan 2023
+            r'\b\d{2}\.\d{2}\.\d{4}\b',  # 01.01.2023
+        ]
+        return any(re.search(pat, value) for pat in patterns)
+
+    def _calculate_probability(self, analysis: dict, is_all_text_dates: bool = False) -> float:
+        if analysis['total'] == 0:
+            return 0.0
+        if is_all_text_dates:
+            # All text dates, no Excel dates
+            ratio = analysis['text_date_count'] / analysis['total']
+            if ratio > 0.9:
+                return 0.5  # Lower probability, but still a warning
+            elif ratio > 0.5:
+                return 0.2
+            else:
+                return 0.1
+        ratio = analysis['text_date_count'] / analysis['total']
+        if ratio > 0.1:
+            return 0.9
+        elif ratio > 0.01:
+            return 0.5
+        elif ratio > 0:
+            return 0.2
+        return 0.0
+
+
+class ArrayFormulaSpillErrorsDetector(ErrorDetector):
+    """
+    Detector for array formula spill errors.
+    
+    Algorithm:
+    1. Scan for array formulas (curly braces or dynamic array functions)
+    2. Look for #SPILL! errors in cells
+    3. For each array formula, check the intended spill range for conflicts
+    4. Calculate probability based on evidence of spill errors or conflicts
+    """
+    def __init__(self):
+        super().__init__(
+            name="array_formula_spill_errors",
+            description="Array formulas that can't spill properly due to insufficient space or conflicts",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    # 1. Check for #SPILL! error
+                    if isinstance(cell.value, str) and cell.value.strip().upper() == '#SPILL!':
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"#SPILL! error detected in cell {cell.coordinate} on sheet {sheet_name}",
+                            probability=0.95,
+                            severity=self.severity,
+                            location=f"{sheet_name}!{cell.coordinate}",
+                            details={'cell': cell.coordinate, 'error': '#SPILL!'},
+                            suggested_fix="Check for blocked cells, merged cells, or other conflicts in the intended spill range."
+                        ))
+                    # 2. Check for array formulas (legacy or dynamic)
+                    if self._is_array_formula(cell):
+                        spill_range, conflict_cells = self._analyze_spill_range(sheet, cell)
+                        if conflict_cells:
+                            # High probability if most/all spill cells are blocked
+                            spill_ratio = len(conflict_cells) / (len(spill_range) - 1)  # -1 to exclude original cell
+                            probability = 0.9 if spill_ratio >= 0.8 else 0.7
+                            results.append(ErrorDetectionResult(
+                                error_type=self.name,
+                                description=f"Array formula in {cell.coordinate} cannot spill due to conflicts in range {spill_range[0]}:{spill_range[-1]}",
+                                probability=probability,
+                                severity=self.severity,
+                                location=f"{sheet_name}!{cell.coordinate}",
+                                details={
+                                    'cell': cell.coordinate,
+                                    'spill_range': [c.coordinate for c in spill_range],
+                                    'conflict_cells': [c.coordinate for c in conflict_cells],
+                                },
+                                suggested_fix="Clear or move conflicting cells in the spill range."
+                            ))
+        return results
+
+    def _is_array_formula(self, cell) -> bool:
+        # Legacy array formulas: openpyxl marks with cell.data_type == 'f' and formula starts with {= or ends with }
+        if cell.data_type == 'f' and cell.value:
+            formula = str(cell.value)
+            if formula.startswith('{=') or formula.endswith('}'):  # legacy CSE
+                return True
+            # Dynamic array functions
+            dynamic_funcs = ['SEQUENCE', 'UNIQUE', 'SORT', 'FILTER', 'RANDARRAY', 'TRANSPOSE', 'XMATCH', 'XLOOKUP']
+            if any(func in formula.upper() for func in dynamic_funcs):
+                return True
+        return False
+
+    def _analyze_spill_range(self, sheet, cell):
+        # Heuristic: For legacy arrays, assume 1xN or Nx1 block; for dynamic, try to estimate
+        # For this implementation, just check the right and down cells for conflicts (up to 10x10 block)
+        spill_range = [cell]
+        conflict_cells = []
+        max_rows, max_cols = 10, 10
+        # Check rightwards
+        for dc in range(1, max_cols):
+            col = cell.column + dc
+            if col > sheet.max_column:
+                break
+            c = sheet.cell(row=cell.row, column=col)
+            if c.value is not None:
+                conflict_cells.append(c)
+            spill_range.append(c)
+        # Check downwards
+        for dr in range(1, max_rows):
+            row = cell.row + dr
+            if row > sheet.max_row:
+                break
+            c = sheet.cell(row=row, column=cell.column)
+            if c.value is not None:
+                conflict_cells.append(c)
+            spill_range.append(c)
+        return spill_range, conflict_cells
+
+
+class VolatileFunctionsDetector(ErrorDetector):
+    """
+    Detector for volatile functions that can cause performance issues in large models.
+    
+    Algorithm:
+    1. Scan for volatile functions (NOW, TODAY, RAND, OFFSET, INDIRECT, etc.)
+    2. Analyze usage patterns and dependency impact
+    3. Calculate performance impact based on frequency and context
+    4. Flag if volatile functions are used inappropriately or excessively
+    """
+    def __init__(self):
+        super().__init__(
+            name="volatile_functions",
+            description="Volatile functions causing excessive recalculations and performance issues",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        
+        # Collect all volatile functions across the workbook
+        volatile_cells = []
+        total_formulas = 0
+        
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == 'f' and cell.value:
+                        total_formulas += 1
+                        volatile_funcs = self._find_volatile_functions(str(cell.value))
+                        if volatile_funcs:
+                            volatile_cells.append({
+                                'cell': cell,
+                                'sheet': sheet_name,
+                                'functions': volatile_funcs,
+                                'dependencies': self._count_dependencies(sheet, cell)
+                            })
+        
+        if not volatile_cells:
+            return results
+        
+        # Analyze overall impact
+        total_volatile_funcs = sum(len(cell['functions']) for cell in volatile_cells)
+        model_size_factor = min(total_formulas / 100, 1.0)  # Normalize by model size
+        
+        # Calculate probability based on usage patterns
+        probability = self._calculate_volatile_probability(
+            total_volatile_funcs, 
+            len(volatile_cells), 
+            total_formulas,
+            volatile_cells
+        )
+        
+        if probability > 0:
+            # Group by severity level
+            high_impact_cells = [c for c in volatile_cells if c['dependencies'] > 5]
+            medium_impact_cells = [c for c in volatile_cells if 2 <= c['dependencies'] <= 5]
+            
+            results.append(ErrorDetectionResult(
+                error_type=self.name,
+                description=f"Found {total_volatile_funcs} volatile functions across {len(volatile_cells)} cells",
+                probability=probability,
+                severity=self.severity,
+                location=f"Workbook-wide: {len(volatile_cells)} cells affected",
+                details={
+                    'total_volatile_functions': total_volatile_funcs,
+                    'affected_cells': len(volatile_cells),
+                    'total_formulas': total_formulas,
+                    'high_impact_cells': len(high_impact_cells),
+                    'medium_impact_cells': len(medium_impact_cells),
+                    'volatile_cells': [
+                        {
+                            'cell': f"{cell['sheet']}!{cell['cell'].coordinate}",
+                            'functions': cell['functions'],
+                            'dependencies': cell['dependencies']
+                        }
+                        for cell in volatile_cells
+                    ]
+                },
+                suggested_fix="Replace volatile functions with static alternatives where possible, or use iterative calculation settings."
+            ))
+        
+        return results
+
+    def _find_volatile_functions(self, formula: str) -> List[str]:
+        """Find volatile functions in a formula."""
+        volatile_functions = {
+            # Time-based
+            'NOW', 'TODAY', 'RAND', 'RANDBETWEEN',
+            # Reference-based
+            'OFFSET', 'INDIRECT', 'ADDRESS', 'COLUMN', 'ROW',
+            # Information functions
+            'CELL', 'INFO',
+            # Database functions
+            'DSUM', 'DCOUNT', 'DAVERAGE', 'DMAX', 'DMIN', 'DSTDEV', 'DVAR',
+            # Other volatile functions
+            'AREAS', 'COLUMNS', 'ROWS', 'HYPERLINK'
+        }
+        
+        found_funcs = []
+        formula_upper = formula.upper()
+        
+        for func in volatile_functions:
+            if func in formula_upper:
+                # Check if it's actually a function call (not part of another word)
+                pattern = r'\b' + func + r'\s*\('
+                import re
+                if re.search(pattern, formula_upper):
+                    found_funcs.append(func)
+        
+        return found_funcs
+
+    def _count_dependencies(self, sheet, cell) -> int:
+        """Count how many other cells reference this cell."""
+        dependencies = 0
+        cell_ref = cell.coordinate
+        
+        for row in sheet.iter_rows():
+            for other_cell in row:
+                if other_cell.data_type == 'f' and other_cell.value:
+                    formula = str(other_cell.value)
+                    if cell_ref in formula:
+                        dependencies += 1
+        
+        return dependencies
+
+    def _calculate_volatile_probability(self, total_volatile_funcs: int, affected_cells: int, total_formulas: int, volatile_cells: List[dict]) -> float:
+        """Calculate probability of performance issues from volatile functions."""
+        if total_formulas == 0:
+            return 0.0
+        
+        # For small models, use absolute counts
+        if total_formulas < 10:
+            if total_volatile_funcs == 1:
+                base_prob = 0.2
+            elif total_volatile_funcs <= 3:
+                base_prob = 0.4
+            else:
+                base_prob = 0.6
+        else:
+            # Base probability from frequency (more nuanced)
+            volatile_ratio = total_volatile_funcs / max(total_formulas, 1)
+            if volatile_ratio > 0.3:  # More than 30% of formulas are volatile
+                base_prob = 0.8
+            elif volatile_ratio > 0.15:  # 15-30% volatile
+                base_prob = 0.6
+            elif volatile_ratio > 0.05:  # 5-15% volatile
+                base_prob = 0.4
+            else:  # Less than 5% volatile
+                base_prob = 0.2
+        
+        # Adjust based on impact (high dependency cells)
+        high_impact_count = sum(1 for cell in volatile_cells if cell['dependencies'] > 5)
+        if high_impact_count > 0:
+            impact_factor = min(high_impact_count / max(affected_cells, 1), 1.0)
+            base_prob += impact_factor * 0.7  # High impact can add up to 70%
+        
+        # Adjust based on model size (larger models are more sensitive)
+        if total_formulas > 100:  # Large model
+            base_prob += 0.4
+        elif total_formulas > 50:  # Medium model
+            base_prob += 0.2
+        
+        # Ensure high probability for high-impact or large model
+        if high_impact_count > 0 or total_formulas > 100:
+            base_prob = max(base_prob, 0.8)
+        
+        return min(base_prob, 1.0)
+
+
+class CrossSheetReferenceErrorsDetector(ErrorDetector):
+    """
+    Detector for cross-sheet reference errors (broken, missing, or invalid references).
+    
+    Algorithm:
+    1. Scan all formulas for cross-sheet references
+    2. Check if referenced sheet exists
+    3. Check if referenced cell/range exists in the target sheet
+    4. Look for #REF! errors in formulas or cell values
+    5. Calculate probability based on severity
+    """
+    def __init__(self):
+        super().__init__(
+            name="cross_sheet_reference_errors",
+            description="References to cells in other sheets that have been moved or deleted",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        sheet_names = set(workbook.sheetnames)
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        cross_refs = self._extract_cross_sheet_references(formula)
+                        for ref in cross_refs:
+                            ref_sheet, ref_cell = ref
+                            if ref_sheet not in sheet_names:
+                                # Missing sheet
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=f"Reference to missing sheet '{ref_sheet}' in formula {cell.coordinate} on sheet {sheet_name}",
+                                    probability=0.95,
+                                    severity=self.severity,
+                                    location=f"{sheet_name}!{cell.coordinate}",
+                                    details={'formula': formula, 'missing_sheet': ref_sheet},
+                                    suggested_fix="Restore the missing sheet or update the formula to reference an existing sheet."
+                                ))
+                            else:
+                                # Check if cell exists in target sheet
+                                target_sheet = workbook[ref_sheet]
+                                if not self._cell_exists(target_sheet, ref_cell):
+                                    # Check for #REF! in formula
+                                    if '#REF!' in formula.upper():
+                                        prob = 0.95
+                                    else:
+                                        prob = 0.7
+                                    results.append(ErrorDetectionResult(
+                                        error_type=self.name,
+                                        description=f"Reference to missing cell/range '{ref_cell}' in sheet '{ref_sheet}' from formula {cell.coordinate} on sheet {sheet_name}",
+                                        probability=prob,
+                                        severity=self.severity,
+                                        location=f"{sheet_name}!{cell.coordinate}",
+                                        details={'formula': formula, 'target_sheet': ref_sheet, 'missing_cell': ref_cell},
+                                        suggested_fix="Update the formula to reference a valid cell/range in the target sheet."
+                                    ))
+                                else:
+                                    # Check if target cell is empty
+                                    tgt_cell = target_sheet[ref_cell]  # openpyxl always returns a cell object
+                                    if tgt_cell.value is None or tgt_cell.value == '':
+                                        results.append(ErrorDetectionResult(
+                                            error_type=self.name,
+                                            description=f"Reference to empty cell '{ref_cell}' in sheet '{ref_sheet}' from formula {cell.coordinate} on sheet {sheet_name}",
+                                            probability=0.3,
+                                            severity=ErrorSeverity.LOW,
+                                            location=f"{sheet_name}!{cell.coordinate}",
+                                            details={'formula': formula, 'target_sheet': ref_sheet, 'empty_cell': ref_cell},
+                                            suggested_fix="Check if the referenced cell should contain data."
+                                        ))
+                    # Also check for #REF! in cell value (not just formula)
+                    if isinstance(cell.value, str) and '#REF!' in cell.value.upper():
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"#REF! error in cell {cell.coordinate} on sheet {sheet_name}",
+                            probability=0.95,
+                            severity=self.severity,
+                            location=f"{sheet_name}!{cell.coordinate}",
+                            details={'cell': cell.coordinate, 'value': cell.value},
+                            suggested_fix="Update the formula to reference a valid cell or sheet."
+                        ))
+        return results
+
+    def _extract_cross_sheet_references(self, formula: str) -> List[tuple]:
+        # Extract references like 'Sheet2'!A1 or Sheet3!B2
+        import re
+        pattern = r"(?:'([^']+)'|([A-Za-z0-9_]+))!([A-Za-z]+[0-9]+)"
+        matches = re.findall(pattern, formula)
+        refs = []
+        for match in matches:
+            sheet = match[0] if match[0] else match[1]
+            cell = match[2]
+            refs.append((sheet, cell))
+        return refs
+
+    def _cell_exists(self, sheet, cell_ref: str) -> bool:
+        from openpyxl.utils import coordinate_to_tuple
+        try:
+            row, col = coordinate_to_tuple(cell_ref)
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            return 1 <= row <= max_row and 1 <= col <= max_col
+        except Exception:
+            return False
+
+
+class DataTypeInconsistenciesInLookupTablesDetector(ErrorDetector):
+    """
+    Detector for data type inconsistencies in lookup tables (e.g., numbers stored as text).
+    
+    Algorithm:
+    1. Scan for lookup functions (VLOOKUP, HLOOKUP, XLOOKUP, MATCH, INDEX)
+    2. Extract lookup ranges
+    3. Analyze data types in lookup key columns/rows
+    4. Flag if mixed types (number/text/date)
+    5. Calculate probability based on proportion of inconsistencies
+    """
+    def __init__(self):
+        super().__init__(
+            name="data_type_inconsistencies_in_lookup_tables",
+            description="Mixed data types in lookup tables (numbers stored as text, etc.)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        lookup_ranges = self._extract_lookup_ranges(formula)
+                        for rng in lookup_ranges:
+                            analysis = self._analyze_lookup_range(sheet, rng)
+                            if analysis['mixed_types']:
+                                probability = self._calculate_probability(analysis)
+                                if probability > 0:
+                                    results.append(ErrorDetectionResult(
+                                        error_type=self.name,
+                                        description=f"Mixed data types detected in lookup range {rng} on sheet {sheet_name}",
+                                        probability=probability,
+                                        severity=self.severity,
+                                        location=f"{sheet_name}!{rng}",
+                                        details=analysis,
+                                        suggested_fix="Convert all lookup keys to a consistent data type (all numbers or all text)."
+                                    ))
+        return results
+
+    def _extract_lookup_ranges(self, formula: str) -> List[str]:
+        # Extract ranges from lookup functions (VLOOKUP, HLOOKUP, XLOOKUP, MATCH, INDEX)
+        import re
+        # Simple pattern for ranges like A1:B10, Sheet2!A1:B10, etc.
+        pattern = r"([A-Za-z0-9_']+!|)([A-Za-z]+[0-9]+:[A-Za-z]+[0-9]+)"
+        matches = re.findall(pattern, formula)
+        ranges = []
+        for match in matches:
+            prefix = match[0]
+            rng = match[1]
+            ranges.append(prefix + rng)
+        return ranges
+
+    def _analyze_lookup_range(self, sheet, rng: str) -> dict:
+        from openpyxl.utils import range_boundaries
+        # Only analyze ranges on the current sheet for now
+        if '!' in rng:
+            sheet_name, rng = rng.split('!')
+            if sheet.title != sheet_name.replace("'", ""):
+                return {'mixed_types': False}
+        try:
+            min_col, min_row, max_col, max_row = range_boundaries(rng)
+        except Exception:
+            return {'mixed_types': False}
+        type_counts = {'number': 0, 'text': 0, 'date': 0, 'other': 0, 'numeric_text': 0}
+        total = 0
+        all_text = True
+        all_numeric_text = True
+        for row in sheet.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+            for cell in row:
+                if cell.value is None:
+                    continue
+                total += 1
+                if isinstance(cell.value, (int, float)):
+                    type_counts['number'] += 1
+                    all_text = False
+                elif self._is_date(cell):
+                    type_counts['date'] += 1
+                    all_text = False
+                elif isinstance(cell.value, str):
+                    if self._is_numeric_string(cell.value):
+                        type_counts['numeric_text'] += 1
+                    else:
+                        type_counts['text'] += 1
+                        all_numeric_text = False
+                else:
+                    type_counts['other'] += 1
+                    all_text = False
+                    all_numeric_text = False
+        # If all non-empty cells are strings and all are numeric strings, treat as numbers
+        if total > 0 and all_text and all_numeric_text and type_counts['numeric_text'] > 0:
+            type_counts['number'] = type_counts['numeric_text']
+            type_counts['numeric_text'] = 0
+        else:
+            # Otherwise, count numeric_text as text
+            type_counts['text'] += type_counts['numeric_text']
+            type_counts['numeric_text'] = 0
+        # Mixed types if more than one type is present (excluding 'other')
+        nonzero_types = [k for k, v in type_counts.items() if v > 0 and k not in ('other', 'numeric_text')]
+        mixed_types = len(nonzero_types) > 1
+        return {
+            'type_counts': type_counts,
+            'total': total,
+            'mixed_types': mixed_types
+        }
+
+    def _is_number(self, value) -> bool:
+        return isinstance(value, (int, float))
+
+    def _is_numeric_string(self, value) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            float(value.replace(',', ''))
+            return True
+        except Exception:
+            return False
+
+    def _is_date(self, cell) -> bool:
+        return hasattr(cell, 'is_date') and cell.is_date
+
+    def _calculate_probability(self, analysis: dict) -> float:
+        if analysis['total'] == 0:
+            return 0.0
+        type_counts = analysis['type_counts']
+        majority_type = max((k for k in type_counts if k != 'other'), key=lambda k: type_counts[k], default=None)
+        inconsistent = sum(v for k, v in type_counts.items() if k != majority_type and k != 'other')
+        ratio = inconsistent / analysis['total'] if analysis['total'] else 0
+        if ratio > 0.1:
+            return 0.9
+        elif ratio > 0.01:
+            return 0.5
+        elif ratio > 0:
+            return 0.2
+        return 0.0
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -375,8 +1309,14 @@ def detect_excel_errors_probabilistic(
     """
     sniffer = ProbabilisticErrorSniffer(file_path, error_threshold)
     
-    # Register the first detector
+    # Register detectors
     sniffer.register_detector(HiddenDataInRangesDetector())
+    sniffer.register_detector(CircularNamedRangesDetector())
+    sniffer.register_detector(InconsistentDateFormatsDetector())
+    sniffer.register_detector(ArrayFormulaSpillErrorsDetector())
+    sniffer.register_detector(VolatileFunctionsDetector())
+    sniffer.register_detector(CrossSheetReferenceErrorsDetector())
+    sniffer.register_detector(DataTypeInconsistenciesInLookupTablesDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
