@@ -23,6 +23,14 @@ from .cli import main as cli_main
 from .excel_extractor import ExcelExtractor, extract_excel_to_markdown
 from .extractor_cli import main as extractor_cli_main
 from .click_cli import cli as click_cli_main
+from .excel_error_sniffer import ExcelErrorSniffer, sniff_excel_errors
+from .error_sniffer_cli import main as error_sniffer_cli_main
+from .probabilistic_error_detector import (
+    ProbabilisticErrorSniffer, 
+    ErrorDetector, 
+    ErrorDetectionResult,
+    detect_excel_errors_probabilistic
+)
 
 __all__ = [
     "analyze_workbook_final",
@@ -32,5 +40,12 @@ __all__ = [
     "ExcelExtractor",
     "extract_excel_to_markdown",
     "extractor_cli_main",
-    "click_cli_main"
+    "click_cli_main",
+    "ExcelErrorSniffer",
+    "sniff_excel_errors",
+    "error_sniffer_cli_main",
+    "ProbabilisticErrorSniffer",
+    "ErrorDetector",
+    "ErrorDetectionResult",
+    "detect_excel_errors_probabilistic"
 ] 

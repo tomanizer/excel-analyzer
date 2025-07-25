@@ -131,11 +131,24 @@ Processing Sheet: Calculations
 
 ```
 cfo_models/
-├── excel_parser.py          # Core analysis engine
+├── src/
+│   └── excel_analyzer/     # Main package
+│       ├── __init__.py     # Package initialization
+│       ├── excel_parser.py          # Core analysis engine
+│       ├── excel_extractor.py       # Advanced extraction tool
+│       ├── excel_error_sniffer.py   # Error detection engine
+│       ├── probabilistic_error_detector.py  # Advanced error detection
+│       ├── cli.py                   # Main CLI interface
+│       ├── extractor_cli.py         # Data extraction CLI
+│       └── error_sniffer_cli.py     # Error detection CLI
 ├── requirements.txt         # Python dependencies
+├── pyproject.toml          # Project configuration
 ├── venv/                   # Virtual environment
-├── sample_model.xlsx       # Test files
-├── final_model.xlsm        # Comprehensive test file
+├── excel_files/            # Excel files for analysis
+├── examples/               # Example scripts and demos
+├── docs/                   # Documentation files
+├── reports/                # Generated analysis reports
+├── tests/                  # Test suite
 └── PROJECT_SUMMARY.md      # This document
 ```
 
@@ -156,13 +169,19 @@ cfo_models/
 ### CLI Interface
 ```bash
 # Basic analysis
-python excel_parser.py --file model.xlsx
+excel-analyzer model.xlsx
 
-# Comprehensive analysis with AI
-python excel_parser.py --file model.xlsx --ai --output python_skeleton.py
+# Comprehensive analysis with all outputs
+excel-analyzer model.xlsx --json --markdown --dataframes
+
+# Data extraction for AI/LLM analysis
+excel-extractor model.xlsx --llm-optimized
+
+# Error detection with probabilistic analysis
+excel-error-sniffer model.xlsx --detailed
 
 # Batch processing
-python excel_parser.py --directory ./models --batch
+excel-analyzer *.xlsx --batch
 ```
 
 ## Current Status
@@ -174,12 +193,16 @@ python excel_parser.py --directory ./models --batch
 ✅ **Advanced Structures**: Named ranges, data validation, charts
 ✅ **Comprehensive Profiling**: Rich metadata generation
 ✅ **Modular Architecture**: Clean, testable code structure
+✅ **CLI Interface**: Three specialized command-line tools
+✅ **Error Detection**: 20+ probabilistic error detectors
+✅ **Testing Framework**: 182 tests with 93.4% pass rate
+✅ **Package Distribution**: Proper installation and distribution
 
 ### In Progress
 🔄 **AI Integration**: Semantic analysis and classification
 🔄 **Code Generation**: Python skeleton creation
-🔄 **CLI Interface**: Command-line tool development
-🔄 **Documentation**: Comprehensive user guides
+🔄 **Performance Optimization**: Large file handling improvements
+🔄 **Additional Error Detection**: More specialized detectors
 
 ### Planned Features
 📋 **Batch Processing**: Handle multiple files efficiently
@@ -192,7 +215,7 @@ python excel_parser.py --directory ./models --batch
 
 ### Basic Analysis
 ```python
-from excel_parser import analyze_workbook_final
+from src.excel_analyzer import analyze_workbook_final
 
 # Analyze a single workbook
 results = analyze_workbook_final("financial_model.xlsx")
@@ -230,20 +253,20 @@ external_links = detect_external_dependencies(workbook)
 ### Short Term (1-2 months)
 1. **AI Integration**: Implement LLM-based semantic analysis
 2. **Code Generation**: Create Python skeleton generator
-3. **CLI Tool**: Develop command-line interface
-4. **Testing**: Comprehensive test suite
+3. **Performance Optimization**: Large file handling improvements
+4. **Additional Error Detection**: More specialized detectors
 
 ### Medium Term (3-6 months)
 1. **Batch Processing**: Handle 300+ models efficiently
-2. **Performance Optimization**: Large file handling
-3. **GUI Interface**: Web-based analysis tool
-4. **Documentation**: User guides and API documentation
+2. **GUI Interface**: Web-based analysis tool
+3. **Advanced AI Features**: Deep learning for formula translation
+4. **Enterprise Integration**: APIs for existing systems
 
 ### Long Term (6+ months)
-1. **Advanced AI**: Deep learning for formula translation
-2. **Cloud Integration**: Web-based processing
-3. **Collaboration Features**: Multi-user model analysis
-4. **Enterprise Features**: Integration with existing systems
+1. **Cloud Integration**: Web-based processing
+2. **Collaboration Features**: Multi-user model analysis
+3. **Advanced Analytics**: Predictive model analysis
+4. **Industry-Specific Features**: Specialized financial modeling tools
 
 ## Success Metrics
 
