@@ -2018,6 +2018,1331 @@ class FormulaRangeVsDataRangeDiscrepancyDetector(ErrorDetector):
         return results
 
 
+class InconsistentFormulaApplicationDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="inconsistent_formula_application",
+            description="Mixed formulas and hardcoded values in the same range (inconsistent calculation methods)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for col in range(1, max_col + 1):
+                formula_rows = []
+                hardcoded_rows = []
+                formulas = {}
+                hardcoded_values = {}
+                for row in range(1, max_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula_rows.append(row)
+                        formulas[row] = cell.value
+                    elif cell.value is not None:
+                        hardcoded_rows.append(row)
+                        hardcoded_values[row] = cell.value
+                total_data_rows = len(formula_rows) + len(hardcoded_rows)
+                if total_data_rows < 3:
+                    continue  # Skip small ranges
+                if len(formula_rows) == 0 or len(hardcoded_rows) == 0:
+                    continue  # Skip if all one type
+                # Calculate proportions
+                formula_ratio = len(formula_rows) / total_data_rows
+                hardcoded_ratio = len(hardcoded_rows) / total_data_rows
+                # Flag if both types are significant (at least 20% each)
+                if formula_ratio >= 0.2 and hardcoded_ratio >= 0.2:
+                    # Probability: more balanced = higher probability
+                    if 0.4 <= formula_ratio <= 0.6:
+                        probability = 0.9  # Very balanced mix
+                    elif 0.3 <= formula_ratio <= 0.7:
+                        probability = 0.7  # Moderately balanced
+                    else:
+                        probability = 0.5  # Less balanced but still mixed
+                    from openpyxl.utils import get_column_letter
+                    col_letter = get_column_letter(col)
+                    min_row = min(min(formula_rows), min(hardcoded_rows))
+                    max_row = max(max(formula_rows), max(hardcoded_rows))
+                    example_formula = next(iter(formulas.values()))
+                    example_hardcoded = next(iter(hardcoded_values.values()))
+                    results.append(ErrorDetectionResult(
+                        error_type=self.name,
+                        description=f"Mixed formulas and hardcoded values in column {col_letter} on sheet {sheet_name}; {len(formula_rows)} formulas and {len(hardcoded_rows)} hardcoded values.",
+                        probability=probability,
+                        severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                        location=f"{sheet_name}!{col_letter}{min_row}:{col_letter}{max_row}",
+                        details={
+                            'column': col_letter,
+                            'formula_rows': sorted(formula_rows),
+                            'hardcoded_rows': sorted(hardcoded_rows),
+                            'formula_ratio': formula_ratio,
+                            'hardcoded_ratio': hardcoded_ratio,
+                            'example_formula': example_formula,
+                            'example_hardcoded': example_hardcoded
+                        },
+                        suggested_fix="Check for mixed formulas and hardcoded values in this range; consider standardizing calculation logic."
+                    ))
+        return results
+
+
+class MissingDollarSignAnchorsDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="missing_dollar_sign_anchors",
+            description="Formulas missing dollar sign anchors for references that should remain fixed",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for cell references without dollar signs
+                        import re
+                        cell_refs = re.findall(r'[A-Z]+\d+', formula)
+                        for ref in cell_refs:
+                            # Check if this reference should be anchored
+                            if self._should_be_anchored(sheet, ref, row, col):
+                                # Check if it's already anchored
+                                if not self._is_anchored(formula, ref):
+                                    probability = self._calculate_anchor_probability(sheet, ref, row, col)
+                                    if probability > 0.5:
+                                        from openpyxl.utils import get_column_letter
+                                        col_letter = get_column_letter(col)
+                                        expected_formula = self._suggest_anchored_formula(formula, ref)
+                                        results.append(ErrorDetectionResult(
+                                            error_type=self.name,
+                                            description=f"Missing dollar sign anchor for reference {ref} in formula at {sheet_name}!{col_letter}{row}",
+                                            probability=probability,
+                                            severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                                            location=f"{sheet_name}!{col_letter}{row}",
+                                            details={
+                                                'formula': formula,
+                                                'reference': ref,
+                                                'expected_formula': expected_formula,
+                                                'current_row': row,
+                                                'current_col': col
+                                            },
+                                            suggested_fix=f"Consider anchoring reference {ref} with dollar signs: {expected_formula}"
+                                        ))
+        return results
+
+    def _should_be_anchored(self, sheet, ref: str, current_row: int, current_col: int) -> bool:
+        """Check if a cell reference should be anchored based on its usage pattern."""
+        # Extract row and column from reference
+        import re
+        match = re.match(r'([A-Z]+)(\d+)', ref)
+        if not match:
+            return False
+        col_str, row_str = match.groups()
+        ref_row = int(row_str)
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        
+        # Check if reference is to a header row (row 1)
+        if ref_row == 1:
+            return True
+        
+        # Check if reference is to a constant value (same value in multiple cells)
+        ref_cell = sheet.cell(row=ref_row, column=ref_col)
+        if ref_cell.value is None:
+            return False
+        
+        # Check if this value appears in multiple cells in the same column
+        constant_count = 0
+        total_cells = 0
+        for r in range(1, sheet.max_row + 1):
+            cell = sheet.cell(row=r, column=ref_col)
+            if cell.value is not None:
+                total_cells += 1
+                if cell.value == ref_cell.value:
+                    constant_count += 1
+        
+        # If the same value appears in more than 2 cells and represents more than 50% of non-empty cells
+        if constant_count > 2 and total_cells > 0 and (constant_count / total_cells) > 0.5:
+            return True
+        
+        return False
+
+    def _is_anchored(self, formula: str, ref: str) -> bool:
+        """Check if a reference is already anchored with dollar signs."""
+        # Look for anchored version of the reference
+        import re
+        anchored_pattern = re.escape(ref).replace('\\', '\\\\')
+        anchored_pattern = anchored_pattern.replace('A', '\\$?A').replace('B', '\\$?B').replace('C', '\\$?C').replace('D', '\\$?D').replace('E', '\\$?E').replace('F', '\\$?F').replace('G', '\\$?G').replace('H', '\\$?H').replace('I', '\\$?I').replace('J', '\\$?J').replace('K', '\\$?K').replace('L', '\\$?L').replace('M', '\\$?M').replace('N', '\\$?N').replace('O', '\\$?O').replace('P', '\\$?P').replace('Q', '\\$?Q').replace('R', '\\$?R').replace('S', '\\$?S').replace('T', '\\$?T').replace('U', '\\$?U').replace('V', '\\$?V').replace('W', '\\$?W').replace('X', '\\$?X').replace('Y', '\\$?Y').replace('Z', '\\$?Z')
+        anchored_pattern = anchored_pattern.replace('1', '\\$?1').replace('2', '\\$?2').replace('3', '\\$?3').replace('4', '\\$?4').replace('5', '\\$?5').replace('6', '\\$?6').replace('7', '\\$?7').replace('8', '\\$?8').replace('9', '\\$?9').replace('0', '\\$?0')
+        
+        # Check if any anchored version exists
+        matches = re.findall(anchored_pattern, formula)
+        for match in matches:
+            if '$' in match:
+                return True
+        return False
+
+    def _calculate_anchor_probability(self, sheet, ref: str, current_row: int, current_col: int) -> float:
+        """Calculate probability that a reference should be anchored."""
+        import re
+        match = re.match(r'([A-Z]+)(\d+)', ref)
+        if not match:
+            return 0.0
+        col_str, row_str = match.groups()
+        ref_row = int(row_str)
+        
+        # Higher probability for header references
+        if ref_row == 1:
+            return 0.9
+        
+        # Check if it's a constant value
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        ref_cell = sheet.cell(row=ref_row, column=ref_col)
+        if ref_cell.value is None:
+            return 0.0
+        
+        constant_count = 0
+        total_cells = 0
+        for r in range(1, sheet.max_row + 1):
+            cell = sheet.cell(row=r, column=ref_col)
+            if cell.value is not None:
+                total_cells += 1
+                if cell.value == ref_cell.value:
+                    constant_count += 1
+        
+        if total_cells == 0:
+            return 0.0
+        
+        constant_ratio = constant_count / total_cells
+        if constant_ratio > 0.8:
+            return 0.8
+        elif constant_ratio > 0.5:
+            return 0.6
+        else:
+            return 0.3
+
+    def _suggest_anchored_formula(self, formula: str, ref: str) -> str:
+        """Suggest a formula with proper anchoring for the given reference."""
+        # Simple approach: add $ to both row and column
+        import re
+        anchored_ref = re.sub(r'([A-Z]+)(\d+)', r'$\1$\2', ref)
+        return formula.replace(ref, anchored_ref)
+
+
+class WrongRowColumnAnchoringDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="wrong_row_column_anchoring",
+            description="Dollar signs on wrong part of cell reference (partial lock errors)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for cell references with dollar signs
+                        import re
+                        cell_refs = re.findall(r'\$?[A-Z]+\$?\d+', formula)
+                        for ref in cell_refs:
+                            if self._has_wrong_anchoring(sheet, ref, row, col):
+                                probability = self._calculate_wrong_anchoring_probability(sheet, ref, row, col)
+                                if probability > 0.5:
+                                    from openpyxl.utils import get_column_letter
+                                    col_letter = get_column_letter(col)
+                                    expected_ref = self._suggest_correct_anchoring(sheet, ref, row, col)
+                                    expected_formula = self._suggest_correct_formula(formula, ref, expected_ref)
+                                    results.append(ErrorDetectionResult(
+                                        error_type=self.name,
+                                        description=f"Wrong anchoring for reference {ref} in formula at {sheet_name}!{col_letter}{row}; should be {expected_ref}",
+                                        probability=probability,
+                                        severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                                        location=f"{sheet_name}!{col_letter}{row}",
+                                        details={
+                                            'formula': formula,
+                                            'current_reference': ref,
+                                            'expected_reference': expected_ref,
+                                            'expected_formula': expected_formula,
+                                            'current_row': row,
+                                            'current_col': col
+                                        },
+                                        suggested_fix=f"Adjust anchoring for {ref} to {expected_ref}: {expected_formula}"
+                                    ))
+        return results
+
+    def _has_wrong_anchoring(self, sheet, ref: str, current_row: int, current_col: int) -> bool:
+        """Check if a reference has wrong anchoring based on usage pattern."""
+        # Extract row and column from reference
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, col_str, row_dollar, row_str = match.groups()
+        ref_row = int(row_str)
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        
+        # Determine expected anchoring based on usage pattern
+        expected_anchoring = self._determine_expected_anchoring(sheet, ref_col, ref_row, current_col, current_row)
+        
+        # Compare actual vs expected anchoring
+        actual_anchoring = self._get_anchoring_type(col_dollar, row_dollar)
+        
+        # Only flag if expected is not relative and actual doesn't match expected
+        if expected_anchoring != "relative" and actual_anchoring != expected_anchoring:
+            return True
+        
+        return False
+
+    def _determine_expected_anchoring(self, sheet, ref_col: int, ref_row: int, current_col: int, current_row: int) -> str:
+        """Determine the expected anchoring type for a reference."""
+        # Check if this is a constant value (should be fully locked)
+        ref_cell = sheet.cell(row=ref_row, column=ref_col)
+        if ref_cell.value is None:
+            return "relative"
+        
+        # Check if it's a header (row 1) - should be row-locked
+        if ref_row == 1:
+            return "row_locked"
+        
+        # Check if it's a constant value
+        constant_count = 0
+        total_cells = 0
+        for r in range(1, sheet.max_row + 1):
+            cell = sheet.cell(row=r, column=ref_col)
+            if cell.value is not None:
+                total_cells += 1
+                if cell.value == ref_cell.value:
+                    constant_count += 1
+        
+        if constant_count > 2 and total_cells > 0 and (constant_count / total_cells) > 0.5:
+            return "fully_locked"
+        
+        # For varying values, assume relative (don't flag as wrong)
+        return "relative"
+
+    def _get_anchoring_type(self, col_dollar: str, row_dollar: str) -> str:
+        """Get the anchoring type from dollar signs."""
+        if col_dollar and row_dollar:
+            return "fully_locked"
+        elif col_dollar:
+            return "column_locked"
+        elif row_dollar:
+            return "row_locked"
+        else:
+            return "relative"
+
+    def _calculate_wrong_anchoring_probability(self, sheet, ref: str, current_row: int, current_col: int) -> float:
+        """Calculate probability that anchoring is wrong."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return 0.0
+        col_dollar, col_str, row_dollar, row_str = match.groups()
+        ref_row = int(row_str)
+        
+        # Higher probability for header references
+        if ref_row == 1:
+            return 0.9
+        
+        # Check if it's a constant value
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        ref_cell = sheet.cell(row=ref_row, column=ref_col)
+        if ref_cell.value is None:
+            return 0.0
+        
+        constant_count = 0
+        total_cells = 0
+        for r in range(1, sheet.max_row + 1):
+            cell = sheet.cell(row=r, column=ref_col)
+            if cell.value is not None:
+                total_cells += 1
+                if cell.value == ref_cell.value:
+                    constant_count += 1
+        
+        if total_cells == 0:
+            return 0.0
+        
+        constant_ratio = constant_count / total_cells
+        if constant_ratio > 0.8:
+            return 0.8
+        elif constant_ratio > 0.5:
+            return 0.6
+        else:
+            return 0.4
+
+    def _suggest_correct_anchoring(self, sheet, ref: str, current_row: int, current_col: int) -> str:
+        """Suggest the correct anchoring for a reference."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return ref
+        col_dollar, col_str, row_dollar, row_str = match.groups()
+        ref_row = int(row_str)
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        
+        expected_anchoring = self._determine_expected_anchoring(sheet, ref_col, ref_row, current_col, current_row)
+        
+        if expected_anchoring == "fully_locked":
+            return f"${col_str}${row_str}"
+        elif expected_anchoring == "column_locked":
+            return f"${col_str}{row_str}"
+        elif expected_anchoring == "row_locked":
+            return f"{col_str}${row_str}"
+        else:
+            return f"{col_str}{row_str}"
+
+    def _suggest_correct_formula(self, formula: str, current_ref: str, expected_ref: str) -> str:
+        """Suggest the correct formula with proper anchoring."""
+        return formula.replace(current_ref, expected_ref)
+
+
+class OverAnchoredReferencesDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="over_anchored_references",
+            description="Dollar signs on references that should be relative (unnecessary absolute)",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            
+            # Find copied formula patterns
+            copied_patterns = self._find_copied_formula_patterns(sheet)
+            
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for over-anchored references
+                        over_anchored_refs = self._find_over_anchored_references(sheet, formula, row, col, copied_patterns)
+                        for ref in over_anchored_refs:
+                            probability = self._calculate_over_anchoring_probability(sheet, ref, row, col, copied_patterns)
+                            if probability > 0.5:
+                                from openpyxl.utils import get_column_letter
+                                col_letter = get_column_letter(col)
+                                expected_ref = self._suggest_relative_reference(ref)
+                                expected_formula = self._suggest_relative_formula(formula, ref, expected_ref)
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=f"Over-anchored reference {ref} in formula at {sheet_name}!{col_letter}{row}; should be {expected_ref}",
+                                    probability=probability,
+                                    severity=self.severity if probability >= 0.7 else ErrorSeverity.LOW,
+                                    location=f"{sheet_name}!{col_letter}{row}",
+                                    details={
+                                        'formula': formula,
+                                        'over_anchored_reference': ref,
+                                        'expected_reference': expected_ref,
+                                        'expected_formula': expected_formula,
+                                        'current_row': row,
+                                        'current_col': col
+                                    },
+                                    suggested_fix=f"Remove unnecessary anchoring for {ref}: {expected_formula}"
+                                ))
+        return results
+
+    def _find_copied_formula_patterns(self, sheet) -> dict:
+        """Find patterns of copied formulas in the sheet."""
+        patterns = {}
+        max_row = sheet.max_row
+        max_col = sheet.max_column
+        
+        for col in range(1, max_col + 1):
+            formula_patterns = {}
+            for row in range(1, max_row + 1):
+                cell = sheet.cell(row=row, column=col)
+                if cell.data_type == 'f' and cell.value:
+                    formula = str(cell.value)
+                    # Normalize formula by removing cell references
+                    normalized = self._normalize_formula(formula)
+                    if normalized not in formula_patterns:
+                        formula_patterns[normalized] = []
+                    formula_patterns[normalized].append(row)
+            
+            # Keep only patterns with multiple occurrences (copied formulas)
+            for pattern, rows in formula_patterns.items():
+                if len(rows) > 1:
+                    patterns[pattern] = rows
+        
+        return patterns
+
+    def _normalize_formula(self, formula: str) -> str:
+        """Normalize formula by replacing cell references with placeholders."""
+        import re
+        # Replace cell references with placeholders
+        normalized = re.sub(r'\$?[A-Z]+\$?\d+', 'CELL', formula)
+        return normalized
+
+    def _find_over_anchored_references(self, sheet, formula: str, current_row: int, current_col: int, copied_patterns: dict) -> List[str]:
+        """Find over-anchored references in a formula."""
+        import re
+        cell_refs = re.findall(r'\$?[A-Z]+\$?\d+', formula)
+        over_anchored = []
+        
+        for ref in cell_refs:
+            if self._is_over_anchored(sheet, ref, current_row, current_col, copied_patterns):
+                over_anchored.append(ref)
+        
+        return over_anchored
+
+    def _is_over_anchored(self, sheet, ref: str, current_row: int, current_col: int, copied_patterns: dict) -> bool:
+        """Check if a reference is over-anchored."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        
+        col_dollar, col_str, row_dollar, row_str = match.groups()
+        ref_row = int(row_str)
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        
+        # Check if this is part of a copied pattern
+        is_copied = self._is_in_copied_pattern(sheet, current_row, current_col, copied_patterns)
+        
+        # Check if the referenced cell contains varying values (not a constant)
+        is_varying = self._is_varying_value(sheet, ref_col, ref_row)
+        
+        # Check if it's a header (row 1) - headers should be anchored
+        is_header = ref_row == 1
+        
+        # Over-anchored if: fully locked AND (copied pattern OR varying value) AND not header
+        if col_dollar and row_dollar and is_copied and not is_header:
+            return True
+        
+        # Over-anchored if: partially locked AND varying value AND not header
+        if (col_dollar or row_dollar) and is_varying and not is_header:
+            return True
+        
+        return False
+
+    def _is_in_copied_pattern(self, sheet, row: int, col: int, copied_patterns: dict) -> bool:
+        """Check if a cell is part of a copied formula pattern."""
+        cell = sheet.cell(row=row, column=col)
+        if cell.data_type != 'f' or not cell.value:
+            return False
+        
+        formula = str(cell.value)
+        normalized = self._normalize_formula(formula)
+        
+        return normalized in copied_patterns and row in copied_patterns[normalized]
+
+    def _is_varying_value(self, sheet, col: int, row: int) -> bool:
+        """Check if a cell contains a varying value (not constant)."""
+        ref_cell = sheet.cell(row=row, column=col)
+        if ref_cell.value is None:
+            return True  # Empty cells are considered varying
+        
+        # Check if this value appears in multiple cells in the same column
+        constant_count = 0
+        total_cells = 0
+        for r in range(1, sheet.max_row + 1):
+            cell = sheet.cell(row=r, column=col)
+            if cell.value is not None:
+                total_cells += 1
+                if cell.value == ref_cell.value:
+                    constant_count += 1
+        
+        # If the same value appears in more than 50% of non-empty cells, it's a constant
+        if total_cells > 0 and (constant_count / total_cells) > 0.5:
+            return False
+        
+        return True
+
+    def _calculate_over_anchoring_probability(self, sheet, ref: str, current_row: int, current_col: int, copied_patterns: dict) -> float:
+        """Calculate probability that a reference is over-anchored."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return 0.0
+        
+        col_dollar, col_str, row_dollar, row_str = match.groups()
+        ref_row = int(row_str)
+        ref_col = openpyxl.utils.column_index_from_string(col_str)
+        
+        # Base probability
+        base_prob = 0.5
+        
+        # Increase probability for copied patterns
+        if self._is_in_copied_pattern(sheet, current_row, current_col, copied_patterns):
+            base_prob += 0.3
+        
+        # Increase probability for varying values
+        if self._is_varying_value(sheet, ref_col, ref_row):
+            base_prob += 0.2
+        
+        # Decrease probability for headers
+        if ref_row == 1:
+            base_prob -= 0.3
+        
+        # Increase probability for fully locked references
+        if col_dollar and row_dollar:
+            base_prob += 0.2
+        
+        return min(0.9, max(0.1, base_prob))
+
+    def _suggest_relative_reference(self, ref: str) -> str:
+        """Suggest a relative reference by removing dollar signs."""
+        import re
+        return re.sub(r'\$', '', ref)
+
+    def _suggest_relative_formula(self, formula: str, current_ref: str, expected_ref: str) -> str:
+        """Suggest a formula with relative references."""
+        return formula.replace(current_ref, expected_ref)
+
+
+class InconsistentAnchoringInRangesDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="inconsistent_anchoring_in_ranges",
+            description="Mixed anchoring within the same range reference (inconsistent anchoring patterns)",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for inconsistent anchoring in ranges
+                        inconsistent_ranges = self._find_inconsistent_ranges(formula)
+                        for range_ref in inconsistent_ranges:
+                            probability = self._calculate_inconsistency_probability(sheet, range_ref, row, col)
+                            if probability > 0.5:
+                                from openpyxl.utils import get_column_letter
+                                col_letter = get_column_letter(col)
+                                expected_range = self._suggest_consistent_range(range_ref)
+                                expected_formula = self._suggest_consistent_formula(formula, range_ref, expected_range)
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=f"Inconsistent anchoring in range {range_ref} in formula at {sheet_name}!{col_letter}{row}; should be {expected_range}",
+                                    probability=probability,
+                                    severity=self.severity if probability >= 0.7 else ErrorSeverity.LOW,
+                                    location=f"{sheet_name}!{col_letter}{row}",
+                                    details={
+                                        'formula': formula,
+                                        'inconsistent_range': range_ref,
+                                        'expected_range': expected_range,
+                                        'expected_formula': expected_formula,
+                                        'current_row': row,
+                                        'current_col': col
+                                    },
+                                    suggested_fix=f"Make anchoring consistent in range {range_ref}: {expected_formula}"
+                                ))
+        return results
+
+    def _find_inconsistent_ranges(self, formula: str) -> List[str]:
+        """Find ranges with inconsistent anchoring in a formula."""
+        import re
+        # Find range patterns like A1:B10, $A$1:A10, A1:$B$10, etc.
+        range_patterns = re.findall(r'\$?[A-Z]+\$?\d+:\$?[A-Z]+\$?\d+', formula)
+        inconsistent_ranges = []
+        
+        for range_ref in range_patterns:
+            if self._has_inconsistent_anchoring(range_ref):
+                inconsistent_ranges.append(range_ref)
+        
+        return inconsistent_ranges
+
+    def _has_inconsistent_anchoring(self, range_ref: str) -> bool:
+        """Check if a range has inconsistent anchoring."""
+        import re
+        # Split range into start and end parts
+        parts = range_ref.split(':')
+        if len(parts) != 2:
+            return False
+        
+        start_ref, end_ref = parts
+        
+        # Parse anchoring for start reference
+        start_match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', start_ref)
+        if not start_match:
+            return False
+        
+        start_col_dollar, start_col, start_row_dollar, start_row = start_match.groups()
+        start_anchoring = self._get_anchoring_type(start_col_dollar, start_row_dollar)
+        
+        # Parse anchoring for end reference
+        end_match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', end_ref)
+        if not end_match:
+            return False
+        
+        end_col_dollar, end_col, end_row_dollar, end_row = end_match.groups()
+        end_anchoring = self._get_anchoring_type(end_col_dollar, end_row_dollar)
+        
+        # Check for inconsistency
+        return start_anchoring != end_anchoring
+
+    def _get_anchoring_type(self, col_dollar: str, row_dollar: str) -> str:
+        """Get the anchoring type from dollar signs."""
+        if col_dollar and row_dollar:
+            return "fully_locked"
+        elif col_dollar:
+            return "column_locked"
+        elif row_dollar:
+            return "row_locked"
+        else:
+            return "relative"
+
+    def _calculate_inconsistency_probability(self, sheet, range_ref: str, current_row: int, current_col: int) -> float:
+        """Calculate probability that inconsistent anchoring will cause problems."""
+        # Base probability
+        base_prob = 0.6
+        
+        # Check if this is in a calculation function
+        cell = sheet.cell(row=current_row, column=current_col)
+        if cell.data_type == 'f' and cell.value:
+            formula = str(cell.value).upper()
+            calc_functions = ["SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "VLOOKUP", "HLOOKUP", "INDEX"]
+            if any(func in formula for func in calc_functions):
+                base_prob += 0.2
+        
+        # Check if this is likely to be copied (part of a pattern)
+        if self._is_likely_copied(sheet, current_row, current_col):
+            base_prob += 0.2
+        
+        # Check severity of inconsistency
+        severity = self._get_inconsistency_severity(range_ref)
+        if severity == "high":
+            base_prob += 0.1
+        elif severity == "medium":
+            base_prob += 0.05
+        
+        return min(0.9, base_prob)
+
+    def _is_likely_copied(self, sheet, row: int, col: int) -> bool:
+        """Check if a cell is likely part of a copied pattern."""
+        # Simple heuristic: check if adjacent cells have similar formulas
+        adjacent_formulas = []
+        for r in range(max(1, row-1), min(sheet.max_row + 1, row+2)):
+            for c in range(max(1, col-1), min(sheet.max_column + 1, col+2)):
+                if r != row or c != col:
+                    cell = sheet.cell(row=r, column=c)
+                    if cell.data_type == 'f' and cell.value:
+                        adjacent_formulas.append(str(cell.value))
+        
+        # If there are similar formulas nearby, it's likely copied
+        if len(adjacent_formulas) >= 2:
+            return True
+        
+        return False
+
+    def _get_inconsistency_severity(self, range_ref: str) -> str:
+        """Get the severity of anchoring inconsistency."""
+        import re
+        parts = range_ref.split(':')
+        if len(parts) != 2:
+            return "low"
+        
+        start_ref, end_ref = parts
+        
+        # Parse anchoring
+        start_match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', start_ref)
+        end_match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', end_ref)
+        
+        if not start_match or not end_match:
+            return "low"
+        
+        start_col_dollar, _, start_row_dollar, _ = start_match.groups()
+        end_col_dollar, _, end_row_dollar, _ = end_match.groups()
+        
+        start_anchoring = self._get_anchoring_type(start_col_dollar, start_row_dollar)
+        end_anchoring = self._get_anchoring_type(end_col_dollar, end_row_dollar)
+        
+        # High severity: fully locked vs relative
+        if (start_anchoring == "fully_locked" and end_anchoring == "relative") or \
+           (start_anchoring == "relative" and end_anchoring == "fully_locked"):
+            return "high"
+        
+        # Medium severity: partial vs relative or partial vs fully locked
+        if start_anchoring != end_anchoring:
+            return "medium"
+        
+        return "low"
+
+    def _suggest_consistent_range(self, range_ref: str) -> str:
+        """Suggest a consistent anchoring for a range."""
+        import re
+        parts = range_ref.split(':')
+        if len(parts) != 2:
+            return range_ref
+        
+        start_ref, end_ref = parts
+        
+        # Determine the most appropriate anchoring based on the range
+        # For now, suggest relative anchoring (most common case)
+        start_relative = re.sub(r'\$', '', start_ref)
+        end_relative = re.sub(r'\$', '', end_ref)
+        
+        return f"{start_relative}:{end_relative}"
+
+    def _suggest_consistent_formula(self, formula: str, current_range: str, expected_range: str) -> str:
+        """Suggest a formula with consistent anchoring."""
+        return formula.replace(current_range, expected_range)
+
+
+class LookupFunctionAnchoringDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="lookup_function_anchoring_errors",
+            description="Wrong anchoring in VLOOKUP, HLOOKUP, INDEX/MATCH functions",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for anchoring errors in lookup functions
+                        lookup_errors = self._find_lookup_anchoring_errors(sheet, formula, row, col)
+                        for error in lookup_errors:
+                            probability = self._calculate_lookup_error_probability(sheet, error, row, col)
+                            if probability > 0.5:
+                                from openpyxl.utils import get_column_letter
+                                col_letter = get_column_letter(col)
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=error['description'],
+                                    probability=probability,
+                                    severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                                    location=f"{sheet_name}!{col_letter}{row}",
+                                    details={
+                                        'formula': formula,
+                                        'function_type': error['function_type'],
+                                        'parameter': error['parameter'],
+                                        'current_anchoring': error['current_anchoring'],
+                                        'expected_anchoring': error['expected_anchoring'],
+                                        'copy_direction': error['copy_direction'],
+                                        'current_row': row,
+                                        'current_col': col
+                                    },
+                                    suggested_fix=error['suggested_fix']
+                                ))
+        return results
+
+    def _find_lookup_anchoring_errors(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Find anchoring errors in lookup functions."""
+        errors = []
+        
+        # Check for VLOOKUP errors
+        vlookup_errors = self._check_vlookup_anchoring(sheet, formula, current_row, current_col)
+        errors.extend(vlookup_errors)
+        
+        # Check for HLOOKUP errors
+        hlookup_errors = self._check_hlookup_anchoring(sheet, formula, current_row, current_col)
+        errors.extend(hlookup_errors)
+        
+        # Check for INDEX/MATCH errors
+        index_match_errors = self._check_index_match_anchoring(sheet, formula, current_row, current_col)
+        errors.extend(index_match_errors)
+        
+        return errors
+
+    def _check_vlookup_anchoring(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Check anchoring in VLOOKUP functions."""
+        import re
+        errors = []
+        
+        # Find VLOOKUP functions
+        vlookup_pattern = r'VLOOKUP\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*(?:,\s*([^)]+))?\s*\)'
+        matches = re.finditer(vlookup_pattern, formula, re.IGNORECASE)
+        
+        for match in matches:
+            lookup_value = match.group(1).strip()
+            table_array = match.group(2).strip()
+            col_index = match.group(3).strip()
+            
+            # Determine copy direction
+            copy_direction = self._determine_copy_direction(sheet, current_row, current_col)
+            
+            # Check lookup value anchoring (flag if not column-locked, regardless of copy direction)
+            if not self._is_column_locked(lookup_value):
+                errors.append({
+                    'function_type': 'VLOOKUP',
+                    'parameter': 'lookup_value',
+                    'current_anchoring': self._get_anchoring_type_from_ref(lookup_value),
+                    'expected_anchoring': 'column_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"VLOOKUP lookup value {lookup_value} should be column-locked when copying across",
+                    'suggested_fix': f"Change {lookup_value} to {self._make_column_locked(lookup_value)}"
+                })
+            
+            # Check table array anchoring (always flag if not fully locked)
+            if not self._is_fully_locked(table_array):
+                errors.append({
+                    'function_type': 'VLOOKUP',
+                    'parameter': 'table_array',
+                    'current_anchoring': self._get_anchoring_type_from_ref(table_array),
+                    'expected_anchoring': 'fully_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"VLOOKUP table array {table_array} should be fully locked",
+                    'suggested_fix': f"Change {table_array} to {self._make_fully_locked(table_array)}"
+                })
+        
+        return errors
+
+    def _check_hlookup_anchoring(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Check anchoring in HLOOKUP functions."""
+        import re
+        errors = []
+        
+        # Find HLOOKUP functions
+        hlookup_pattern = r'HLOOKUP\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*(?:,\s*([^)]+))?\s*\)'
+        matches = re.finditer(hlookup_pattern, formula, re.IGNORECASE)
+        
+        for match in matches:
+            lookup_value = match.group(1).strip()
+            table_array = match.group(2).strip()
+            row_index = match.group(3).strip()
+            
+            # Determine copy direction
+            copy_direction = self._determine_copy_direction(sheet, current_row, current_col)
+            
+            # Check lookup value anchoring (flag if not row-locked, regardless of copy direction)
+            if not self._is_row_locked(lookup_value):
+                errors.append({
+                    'function_type': 'HLOOKUP',
+                    'parameter': 'lookup_value',
+                    'current_anchoring': self._get_anchoring_type_from_ref(lookup_value),
+                    'expected_anchoring': 'row_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"HLOOKUP lookup value {lookup_value} should be row-locked when copying down",
+                    'suggested_fix': f"Change {lookup_value} to {self._make_row_locked(lookup_value)}"
+                })
+            
+            # Check table array anchoring (always flag if not fully locked)
+            if not self._is_fully_locked(table_array):
+                errors.append({
+                    'function_type': 'HLOOKUP',
+                    'parameter': 'table_array',
+                    'current_anchoring': self._get_anchoring_type_from_ref(table_array),
+                    'expected_anchoring': 'fully_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"HLOOKUP table array {table_array} should be fully locked",
+                    'suggested_fix': f"Change {table_array} to {self._make_fully_locked(table_array)}"
+                })
+        
+        return errors
+
+    def _check_index_match_anchoring(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Check anchoring in INDEX/MATCH functions."""
+        import re
+        errors = []
+        
+        # Find INDEX functions with MATCH
+        index_match_pattern = r'INDEX\s*\(\s*([^,]+)\s*,\s*MATCH\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*(?:,\s*([^)]+))?\s*\)\s*\)'
+        matches = re.finditer(index_match_pattern, formula, re.IGNORECASE)
+        
+        for match in matches:
+            array = match.group(1).strip()
+            lookup_value = match.group(2).strip()
+            lookup_array = match.group(3).strip()
+            
+            # Determine copy direction
+            copy_direction = self._determine_copy_direction(sheet, current_row, current_col)
+            
+            # Check lookup value anchoring (flag if not column-locked, regardless of copy direction)
+            if not self._is_column_locked(lookup_value):
+                errors.append({
+                    'function_type': 'INDEX/MATCH',
+                    'parameter': 'lookup_value',
+                    'current_anchoring': self._get_anchoring_type_from_ref(lookup_value),
+                    'expected_anchoring': 'column_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"INDEX/MATCH lookup value {lookup_value} should be column-locked when copying across",
+                    'suggested_fix': f"Change {lookup_value} to {self._make_column_locked(lookup_value)}"
+                })
+            
+            # Check array anchoring (always flag if not fully locked)
+            if not self._is_fully_locked(array):
+                errors.append({
+                    'function_type': 'INDEX/MATCH',
+                    'parameter': 'array',
+                    'current_anchoring': self._get_anchoring_type_from_ref(array),
+                    'expected_anchoring': 'fully_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"INDEX/MATCH array {array} should be fully locked",
+                    'suggested_fix': f"Change {array} to {self._make_fully_locked(array)}"
+                })
+            
+            # Check lookup array anchoring (always flag if not fully locked)
+            if not self._is_fully_locked(lookup_array):
+                errors.append({
+                    'function_type': 'INDEX/MATCH',
+                    'parameter': 'lookup_array',
+                    'current_anchoring': self._get_anchoring_type_from_ref(lookup_array),
+                    'expected_anchoring': 'fully_locked',
+                    'copy_direction': copy_direction,
+                    'description': f"INDEX/MATCH lookup array {lookup_array} should be fully locked",
+                    'suggested_fix': f"Change {lookup_array} to {self._make_fully_locked(lookup_array)}"
+                })
+        
+        return errors
+
+    def _determine_copy_direction(self, sheet, row: int, col: int) -> str:
+        """Determine the likely copy direction for a cell."""
+        # Simple heuristic: check if adjacent cells have similar formulas
+        horizontal_similar = 0
+        vertical_similar = 0
+        
+        # Check horizontal (across)
+        for c in range(max(1, col-1), min(sheet.max_column + 1, col+2)):
+            if c != col:
+                cell = sheet.cell(row=row, column=c)
+                if cell.data_type == 'f' and cell.value:
+                    horizontal_similar += 1
+        
+        # Check vertical (down)
+        for r in range(max(1, row-1), min(sheet.max_row + 1, row+2)):
+            if r != row:
+                cell = sheet.cell(row=r, column=col)
+                if cell.data_type == 'f' and cell.value:
+                    vertical_similar += 1
+        
+        if horizontal_similar > vertical_similar:
+            return "across"
+        elif vertical_similar > horizontal_similar:
+            return "down"
+        else:
+            return "unknown"
+
+    def _is_column_locked(self, ref: str) -> bool:
+        """Check if a reference is column-locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return bool(col_dollar) and not bool(row_dollar)
+
+    def _is_row_locked(self, ref: str) -> bool:
+        """Check if a reference is row-locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return not bool(col_dollar) and bool(row_dollar)
+
+    def _is_fully_locked(self, ref: str) -> bool:
+        """Check if a reference is fully locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return bool(col_dollar) and bool(row_dollar)
+
+    def _get_anchoring_type_from_ref(self, ref: str) -> str:
+        """Get anchoring type from a reference."""
+        if self._is_fully_locked(ref):
+            return "fully_locked"
+        elif self._is_column_locked(ref):
+            return "column_locked"
+        elif self._is_row_locked(ref):
+            return "row_locked"
+        else:
+            return "relative"
+
+    def _make_column_locked(self, ref: str) -> str:
+        """Make a reference column-locked."""
+        import re
+        return re.sub(r'([A-Z]+)(\d+)', r'$\1\2', ref)
+
+    def _make_row_locked(self, ref: str) -> str:
+        """Make a reference row-locked."""
+        import re
+        return re.sub(r'([A-Z]+)(\d+)', r'\1$\2', ref)
+
+    def _make_fully_locked(self, ref: str) -> str:
+        """Make a reference fully locked."""
+        import re
+        return re.sub(r'([A-Z]+)(\d+)', r'$\1$\2', ref)
+
+    def _calculate_lookup_error_probability(self, sheet, error: dict, current_row: int, current_col: int) -> float:
+        """Calculate probability that a lookup anchoring error will cause problems."""
+        base_prob = 0.7  # High base probability for lookup functions
+        
+        # Increase probability for critical parameters
+        if error['parameter'] in ['table_array', 'array', 'lookup_array']:
+            base_prob += 0.2  # Table arrays are critical
+        
+        # Increase probability for known copy direction
+        if error['copy_direction'] != "unknown":
+            base_prob += 0.1
+        
+        # Increase probability for high severity functions
+        if error['function_type'] in ['VLOOKUP', 'INDEX/MATCH']:
+            base_prob += 0.1
+        
+        return min(0.9, base_prob)
+
+
+class ArrayFormulaAnchoringDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="array_formula_anchoring_errors",
+            description="Incorrect anchoring in array formulas",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        # Look for anchoring errors in array formulas
+                        array_errors = self._find_array_anchoring_errors(sheet, formula, row, col)
+                        for error in array_errors:
+                            probability = self._calculate_array_error_probability(sheet, error, row, col)
+                            if probability > 0.5:
+                                from openpyxl.utils import get_column_letter
+                                col_letter = get_column_letter(col)
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=error['description'],
+                                    probability=probability,
+                                    severity=self.severity if probability >= 0.7 else ErrorSeverity.LOW,
+                                    location=f"{sheet_name}!{col_letter}{row}",
+                                    details={
+                                        'formula': formula,
+                                        'array_function': error['array_function'],
+                                        'range_reference': error['range_reference'],
+                                        'current_anchoring': error['current_anchoring'],
+                                        'expected_anchoring': error['expected_anchoring'],
+                                        'current_row': row,
+                                        'current_col': col
+                                    },
+                                    suggested_fix=error['suggested_fix']
+                                ))
+        return results
+
+    def _find_array_anchoring_errors(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Find anchoring errors in array formulas."""
+        errors = []
+        
+        # Check for SUM(IF()) array formulas
+        sum_if_errors = self._check_sum_if_anchoring(sheet, formula, current_row, current_col)
+        errors.extend(sum_if_errors)
+        
+        # Check for modern array functions
+        modern_array_errors = self._check_modern_array_functions(sheet, formula, current_row, current_col)
+        errors.extend(modern_array_errors)
+        
+        return errors
+
+    def _check_sum_if_anchoring(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Check anchoring in SUM(IF()) array formulas."""
+        import re
+        errors = []
+        
+        # Find SUM(IF()) patterns
+        sum_if_pattern = r'SUM\s*\(\s*IF\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*(?:,\s*([^)]+))?\s*\)\s*\)'
+        matches = re.finditer(sum_if_pattern, formula, re.IGNORECASE)
+        
+        for match in matches:
+            condition_range = match.group(1).strip()
+            true_range = match.group(2).strip()
+            false_value = match.group(3).strip() if match.group(3) else "0"
+            
+            # Check if ranges are over-anchored (should be relative for flexibility)
+            if self._is_over_anchored_for_array(condition_range):
+                errors.append({
+                    'array_function': 'SUM(IF)',
+                    'range_reference': condition_range,
+                    'current_anchoring': self._get_anchoring_type_from_ref(condition_range),
+                    'expected_anchoring': 'relative',
+                    'description': f"SUM(IF) condition range {condition_range} should be relative for flexibility",
+                    'suggested_fix': f"Change {condition_range} to {self._make_relative(condition_range)}"
+                })
+            
+            if self._is_over_anchored_for_array(true_range):
+                errors.append({
+                    'array_function': 'SUM(IF)',
+                    'range_reference': true_range,
+                    'current_anchoring': self._get_anchoring_type_from_ref(true_range),
+                    'expected_anchoring': 'relative',
+                    'description': f"SUM(IF) true range {true_range} should be relative for flexibility",
+                    'suggested_fix': f"Change {true_range} to {self._make_relative(true_range)}"
+                })
+        
+        return errors
+
+    def _check_modern_array_functions(self, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Check anchoring in modern array functions."""
+        import re
+        errors = []
+        
+        # Array functions that should typically have relative ranges
+        array_functions = [
+            ('UNIQUE', r'UNIQUE\s*\(\s*([^)]+)\s*\)'),
+            ('FILTER', r'FILTER\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)'),
+            ('SORT', r'SORT\s*\(\s*([^)]+)\s*\)'),
+            ('SORTBY', r'SORTBY\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)'),
+            ('SEQUENCE', r'SEQUENCE\s*\(\s*([^)]+)\s*\)'),
+            ('RANDARRAY', r'RANDARRAY\s*\(\s*([^)]+)\s*\)')
+        ]
+        
+        for func_name, pattern in array_functions:
+            matches = re.finditer(pattern, formula, re.IGNORECASE)
+            for match in matches:
+                # Check each range parameter
+                for i in range(1, len(match.groups()) + 1):
+                    range_ref = match.group(i).strip()
+                    if self._is_over_anchored_for_array(range_ref):
+                        errors.append({
+                            'array_function': func_name,
+                            'range_reference': range_ref,
+                            'current_anchoring': self._get_anchoring_type_from_ref(range_ref),
+                            'expected_anchoring': 'relative',
+                            'description': f"{func_name} range {range_ref} should be relative for flexibility",
+                            'suggested_fix': f"Change {range_ref} to {self._make_relative(range_ref)}"
+                        })
+        
+        return errors
+
+    def _is_over_anchored_for_array(self, range_ref: str) -> bool:
+        """Check if a range is over-anchored for array formula flexibility."""
+        # Check if it's a range reference
+        if ':' not in range_ref:
+            return False
+        
+        # Split range into start and end parts
+        parts = range_ref.split(':')
+        if len(parts) != 2:
+            return False
+        
+        start_ref, end_ref = parts
+        
+        # Check if both parts are fully locked
+        if self._is_fully_locked(start_ref) and self._is_fully_locked(end_ref):
+            return True
+        
+        # Check if it's a very large range (likely should be relative)
+        if self._is_large_range(start_ref, end_ref):
+            return True
+        
+        return False
+
+    def _is_large_range(self, start_ref: str, end_ref: str) -> bool:
+        """Check if a range is large enough to warrant relative anchoring."""
+        import re
+        
+        # Extract row numbers
+        start_match = re.match(r'[A-Z]+(\d+)', start_ref)
+        end_match = re.match(r'[A-Z]+(\d+)', end_ref)
+        
+        if not start_match or not end_match:
+            return False
+        
+        start_row = int(start_match.group(1))
+        end_row = int(end_match.group(1))
+        
+        # Consider ranges with more than 50 rows as large
+        return (end_row - start_row) > 50
+
+    def _is_fully_locked(self, ref: str) -> bool:
+        """Check if a reference is fully locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return bool(col_dollar) and bool(row_dollar)
+
+    def _get_anchoring_type_from_ref(self, ref: str) -> str:
+        """Get anchoring type from a reference."""
+        if self._is_fully_locked(ref):
+            return "fully_locked"
+        elif self._is_column_locked(ref):
+            return "column_locked"
+        elif self._is_row_locked(ref):
+            return "row_locked"
+        else:
+            return "relative"
+
+    def _is_column_locked(self, ref: str) -> bool:
+        """Check if a reference is column-locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return bool(col_dollar) and not bool(row_dollar)
+
+    def _is_row_locked(self, ref: str) -> bool:
+        """Check if a reference is row-locked."""
+        import re
+        match = re.match(r'(\$?)([A-Z]+)(\$?)(\d+)', ref)
+        if not match:
+            return False
+        col_dollar, _, row_dollar, _ = match.groups()
+        return not bool(col_dollar) and bool(row_dollar)
+
+    def _make_relative(self, ref: str) -> str:
+        """Make a reference relative by removing dollar signs."""
+        import re
+        return re.sub(r'\$', '', ref)
+
+    def _calculate_array_error_probability(self, sheet, error: dict, current_row: int, current_col: int) -> float:
+        """Calculate probability that an array anchoring error will cause problems."""
+        base_prob = 0.6  # Medium base probability for array formulas
+        
+        # Increase probability for large ranges
+        if ':' in error['range_reference']:
+            parts = error['range_reference'].split(':')
+            if len(parts) == 2:
+                start_ref, end_ref = parts
+                if self._is_large_range(start_ref, end_ref):
+                    base_prob += 0.2
+        
+        # Increase probability for critical array functions
+        if error['array_function'] in ['SUM(IF)', 'FILTER', 'UNIQUE']:
+            base_prob += 0.1
+        
+        # Increase probability for fully locked ranges
+        if error['current_anchoring'] == 'fully_locked':
+            base_prob += 0.1
+        
+        return min(0.9, base_prob)
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -2057,6 +3382,13 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(FormulaBoundaryMismatchDetector())
     sniffer.register_detector(CopyPasteFormulaGapsDetector())
     sniffer.register_detector(FormulaRangeVsDataRangeDiscrepancyDetector())
+    sniffer.register_detector(InconsistentFormulaApplicationDetector())
+    sniffer.register_detector(MissingDollarSignAnchorsDetector())
+    sniffer.register_detector(WrongRowColumnAnchoringDetector())
+    sniffer.register_detector(OverAnchoredReferencesDetector())
+    sniffer.register_detector(InconsistentAnchoringInRangesDetector())
+    sniffer.register_detector(LookupFunctionAnchoringDetector())
+    sniffer.register_detector(ArrayFormulaAnchoringDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
