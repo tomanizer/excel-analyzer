@@ -16,6 +16,7 @@ import json
 import re
 from dataclasses import dataclass
 from enum import Enum
+from collections import Counter
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -1733,6 +1734,78 @@ class FalseRangeEndDetectionDetector(ErrorDetector):
         return results
 
 
+class PartialFormulaPropagationDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="partial_formula_propagation",
+            description="Cells in a data range are missing formulas that are present in most other cells (partial formula propagation)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for col in range(1, max_col + 1):
+                formula_rows = []
+                non_formula_rows = []
+                formulas = {}
+                for row in range(1, max_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula_rows.append(row)
+                        formulas[row] = cell.value
+                    elif cell.value is not None:
+                        non_formula_rows.append(row)
+                total_data_rows = len(formula_rows) + len(non_formula_rows)
+                if total_data_rows < 5:
+                    continue  # skip small ranges
+                if len(formula_rows) / total_data_rows < 0.7:
+                    continue  # skip if not mostly formulas
+                # Find non-formula cells surrounded by formulas or at the edge
+                missing_candidates = []
+                for row in non_formula_rows:
+                    prev_formula = any(r < row for r in formula_rows)
+                    next_formula = any(r > row for r in formula_rows)
+                    if (prev_formula and next_formula) or row == 1 or row == max_row:
+                        missing_candidates.append(row)
+                if not missing_candidates:
+                    continue
+                # Use the most common formula as the expected one
+                from collections import Counter
+                formula_counter = Counter(formulas.values())
+                if not formula_counter:
+                    continue
+                expected_formula, _ = formula_counter.most_common(1)[0]
+                # Probability: more missing = lower, more surrounded = higher, edge = 0.5
+                for row in missing_candidates:
+                    if row == 1 or row == max_row:
+                        probability = 0.5
+                        severity = ErrorSeverity.MEDIUM
+                    else:
+                        probability = 0.8 if len(missing_candidates) <= 2 else 0.6
+                        severity = self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM
+                    from openpyxl.utils import get_column_letter
+                    col_letter = get_column_letter(col)
+                    results.append(ErrorDetectionResult(
+                        error_type=self.name,
+                        description=f"Cell {col_letter}{row} on sheet {sheet_name} is missing a formula, but most cells in this column have '{expected_formula}'",
+                        probability=probability,
+                        severity=severity,
+                        location=f"{sheet_name}!{col_letter}{row}",
+                        details={
+                            'column': col_letter,
+                            'row': row,
+                            'expected_formula': expected_formula,
+                            'missing_candidates': missing_candidates
+                        },
+                        suggested_fix=f"Copy the formula '{expected_formula}' to cell {col_letter}{row} if appropriate."
+                    ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1768,6 +1841,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(PrecisionErrorsInFinancialCalculationsDetector())
     sniffer.register_detector(IncompleteDragFormulaDetector())
     sniffer.register_detector(FalseRangeEndDetectionDetector())
+    sniffer.register_detector(PartialFormulaPropagationDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
