@@ -1579,6 +1579,78 @@ class PrecisionErrorsInFinancialCalculationsDetector(ErrorDetector):
         return results
 
 
+class IncompleteDragFormulaDetector(ErrorDetector):
+    """
+    Detector for incomplete drag formulas (formula cutoff / range incomplete formula errors).
+    
+    Algorithm:
+    1. For each column, scan for contiguous blocks of formulas
+    2. Identify expected data range (based on adjacent columns or max data row)
+    3. Detect cutoffs (formulas stop before end of data) or gaps (missing formulas in middle)
+    4. Calculate probability based on severity
+    """
+    def __init__(self):
+        super().__init__(
+            name="incomplete_drag_formula",
+            description="Formula drag/copy stopped short, leaving cells without formulas (formula cutoff)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            # For each column, scan for formula blocks
+            for col in range(1, max_col + 1):
+                formula_rows = []
+                data_rows = []
+                for row in range(1, max_row + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.value is not None:
+                        data_rows.append(row)
+                    if cell.data_type == 'f' and cell.value:
+                        formula_rows.append(row)
+                if not formula_rows or not data_rows:
+                    continue
+                # Expected range: from min(data_rows) to max(data_rows)
+                expected_rows = set(range(min(data_rows), max(data_rows) + 1))
+                formula_rows_set = set(formula_rows)
+                missing_formula_rows = expected_rows - formula_rows_set
+                if not missing_formula_rows:
+                    continue  # No cutoff/gap
+                # Probability calculation
+                cutoff_at_end = max(formula_rows) < max(data_rows)
+                gap_in_middle = any(row > min(formula_rows) and row < max(formula_rows) for row in missing_formula_rows)
+                if gap_in_middle:
+                    probability = 0.9
+                elif cutoff_at_end and len(missing_formula_rows) > 1:
+                    probability = 0.8
+                elif cutoff_at_end:
+                    probability = 0.6
+                else:
+                    probability = 0.3
+                if probability > 0:
+                    from openpyxl.utils import get_column_letter
+                    col_letter = get_column_letter(col)
+                    results.append(ErrorDetectionResult(
+                        error_type=self.name,
+                        description=f"Incomplete drag/copy of formula in column {col_letter} on sheet {sheet_name}; missing formulas at rows {sorted(missing_formula_rows)}",
+                        probability=probability,
+                        severity=self.severity if probability >= 0.6 else ErrorSeverity.LOW,
+                        location=f"{sheet_name}!{col_letter}{min(data_rows)}:{col_letter}{max(data_rows)}",
+                        details={
+                            'column': col_letter,
+                            'missing_formula_rows': sorted(missing_formula_rows),
+                            'formula_rows': formula_rows,
+                            'data_rows': data_rows
+                        },
+                        suggested_fix="Drag/copy the formula to all data rows; check for gaps or cutoffs."
+                    ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1612,6 +1684,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(ConditionalFormattingOverlapConflictsDetector())
     sniffer.register_detector(ExternalDataConnectionFailuresDetector())
     sniffer.register_detector(PrecisionErrorsInFinancialCalculationsDetector())
+    sniffer.register_detector(IncompleteDragFormulaDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
