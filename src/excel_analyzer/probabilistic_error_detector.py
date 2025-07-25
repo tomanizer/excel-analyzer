@@ -1392,6 +1392,193 @@ class ConditionalFormattingOverlapConflictsDetector(ErrorDetector):
         return ('overlap', 0.3)
 
 
+class ExternalDataConnectionFailuresDetector(ErrorDetector):
+    """
+    Detector for external data connection failures (broken or outdated links).
+    
+    Algorithm:
+    1. Scan for external links and data connections
+    2. Check if target file/database exists (if accessible)
+    3. Check for broken/unavailable links in workbook metadata
+    4. Check for error values in cells that depend on external data
+    5. Check last refresh date/time if available
+    6. Calculate probability based on severity
+    """
+    def __init__(self):
+        super().__init__(
+            name="external_data_connection_failures",
+            description="Links to external databases or files that are broken or outdated",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        import os
+        results = []
+        # 1. Scan for external links (to other workbooks/files)
+        external_links = getattr(workbook, 'external_links', [])
+        for link in external_links:
+            target = getattr(link, 'target', None)
+            if not target:
+                continue
+            # 2. Check if the target file exists (if it's a file path)
+            if os.path.isfile(target):
+                probability = 0.2  # Low probability if file exists
+            else:
+                probability = 0.95  # High probability if file is missing
+            results.append(ErrorDetectionResult(
+                error_type=self.name,
+                description=f"External link to file '{target}' is {'missing' if probability > 0.5 else 'present'}",
+                probability=probability,
+                severity=self.severity if probability > 0.5 else ErrorSeverity.LOW,
+                location=f"external_link:{target}",
+                details={'target': target, 'link': str(link)},
+                suggested_fix="Update or remove the broken external link."
+            ))
+        # 2b. Scan for data connections (databases, web queries, etc.)
+        connections = getattr(workbook, 'connections', None)
+        if connections:
+            for conn in connections:
+                # Check last refresh date/time if available
+                last_refresh = getattr(conn, 'last_refresh', None)
+                if last_refresh:
+                    import datetime
+                    if isinstance(last_refresh, str):
+                        try:
+                            last_refresh = datetime.datetime.fromisoformat(last_refresh)
+                        except Exception:
+                            last_refresh = None
+                    if last_refresh:
+                        days_since = (datetime.datetime.now() - last_refresh).days
+                        if days_since > 30:
+                            probability = 0.6
+                        else:
+                            probability = 0.2
+                    else:
+                        probability = 0.3
+                else:
+                    probability = 0.3
+                results.append(ErrorDetectionResult(
+                    error_type=self.name,
+                    description=f"External data connection '{getattr(conn, 'name', 'unknown')}' may be outdated or unverifiable",
+                    probability=probability,
+                    severity=ErrorSeverity.MEDIUM if probability > 0.3 else ErrorSeverity.LOW,
+                    location=f"connection:{getattr(conn, 'name', 'unknown')}",
+                    details={'connection': str(conn)},
+                    suggested_fix="Check the data connection and refresh if needed."
+                ))
+        # 3. Check for error values in cells that depend on external data
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, str) and cell.value.upper() in {'#REF!', '#VALUE!', '#N/A'}:
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"Error value '{cell.value}' in cell {cell.coordinate} on sheet {sheet_name} may be due to external data connection failure",
+                            probability=0.8,
+                            severity=self.severity,
+                            location=f"{sheet_name}!{cell.coordinate}",
+                            details={'cell': cell.coordinate, 'value': cell.value},
+                            suggested_fix="Check external data sources and update or fix broken links."
+                        ))
+        return results
+
+
+class PrecisionErrorsInFinancialCalculationsDetector(ErrorDetector):
+    """
+    Detector for floating-point precision errors in financial calculations.
+    
+    Algorithm:
+    1. Scan for formulas with decimal arithmetic or financial functions
+    2. Detect absence of rounding in such formulas
+    3. Analyze for known precision issues (chained arithmetic, subtraction of nearly equal numbers)
+    4. Calculate probability based on severity
+    """
+    def __init__(self):
+        super().__init__(
+            name="precision_errors_in_financial_calculations",
+            description="Floating-point precision errors in financial calculations",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        import re
+        results = []
+        financial_funcs = {'PMT', 'NPV', 'IRR', 'FV', 'PV', 'RATE', 'XNPV', 'XIRR', 'MIRR', 'DURATION', 'YIELD', 'COUPON', 'PRICE', 'DISC', 'TBILL', 'SLN', 'SYD', 'DB', 'DDB', 'VDB', 'AMORDEGRC', 'AMORLINC'}
+        rounding_funcs = {'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'MROUND', 'TRUNC', 'INT', 'CEILING', 'FLOOR'}
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value).upper()
+                        # 1. Check for financial functions
+                        uses_financial_func = any(func in formula for func in financial_funcs)
+                        uses_rounding = any(func in formula for func in rounding_funcs)
+                        # 2. Check for decimal arithmetic (division, multiplication, subtraction, decimal point)
+                        has_decimal_point = '.' in formula
+                        cell_refs = re.findall(r"[A-Z][0-9]+", formula)
+                        any_float = False
+                        for ref in cell_refs:
+                            try:
+                                ref_cell = sheet[ref]
+                                if isinstance(ref_cell.value, float):
+                                    any_float = True
+                                    break
+                            except Exception:
+                                continue
+                        has_decimal_arithmetic = has_decimal_point or any_float
+                        # 3. Check for subtraction of nearly equal numbers (e.g., A1-A2)
+                        subtraction_matches = re.findall(r"([A-Z][0-9]+)\s*-\s*([A-Z][0-9]+)", formula)
+                        # 4. Check for chained arithmetic (multiple operators)
+                        operator_count = formula.count('+') + formula.count('-') + formula.count('*') + formula.count('/')
+                        # 5. Ignore integer-only calculations
+                        cell_refs = re.findall(r"[A-Z][0-9]+", formula)
+                        all_integer = True
+                        for ref in cell_refs:
+                            try:
+                                ref_cell = sheet[ref]
+                                if not isinstance(ref_cell.value, int):
+                                    all_integer = False
+                                    break
+                            except Exception:
+                                all_integer = False
+                                break
+                        is_integer_only = all_integer and not has_decimal_arithmetic and not uses_financial_func
+                        if is_integer_only:
+                            continue
+                        # 6. Probability calculation
+                        probability = 0.0
+                        if uses_financial_func and not uses_rounding:
+                            probability = 0.9
+                        elif operator_count >= 3 and not uses_rounding:
+                            probability = 0.8
+                        elif subtraction_matches and not uses_rounding:
+                            probability = 0.8
+                        elif has_decimal_arithmetic and not uses_rounding:
+                            probability = 0.6
+                        elif uses_rounding and operator_count >= 2:
+                            probability = 0.3
+                        if probability > 0:
+                            results.append(ErrorDetectionResult(
+                                error_type=self.name,
+                                description=f"Potential precision error in formula {cell.coordinate} on sheet {sheet_name}",
+                                probability=probability,
+                                severity=self.severity if probability >= 0.6 else ErrorSeverity.LOW,
+                                location=f"{sheet_name}!{cell.coordinate}",
+                                details={
+                                    'formula': formula,
+                                    'uses_financial_func': uses_financial_func,
+                                    'uses_rounding': uses_rounding,
+                                    'has_decimal_arithmetic': has_decimal_arithmetic,
+                                    'subtraction_matches': subtraction_matches,
+                                    'operator_count': operator_count
+                                },
+                                suggested_fix="Use explicit rounding (e.g., ROUND) in all financial and decimal calculations."
+                            ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1423,6 +1610,8 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(CrossSheetReferenceErrorsDetector())
     sniffer.register_detector(DataTypeInconsistenciesInLookupTablesDetector())
     sniffer.register_detector(ConditionalFormattingOverlapConflictsDetector())
+    sniffer.register_detector(ExternalDataConnectionFailuresDetector())
+    sniffer.register_detector(PrecisionErrorsInFinancialCalculationsDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
