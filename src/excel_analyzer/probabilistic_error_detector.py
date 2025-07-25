@@ -1806,6 +1806,68 @@ class PartialFormulaPropagationDetector(ErrorDetector):
         return results
 
 
+class FormulaBoundaryMismatchDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="formula_boundary_mismatch",
+            description="Aggregation formula references a range that does not cover all data (range misalignment)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        agg_funcs = ["SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN"]
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value).upper()
+                        for func in agg_funcs:
+                            if formula.startswith(f"={func}"):
+                                # Extract range, e.g., =SUM(A1:A50)
+                                import re
+                                match = re.search(r"([A-Z]+)(\d+):([A-Z]+)(\d+)", formula)
+                                if not match:
+                                    continue
+                                start_col, start_row, end_col, end_row = match.groups()
+                                if start_col != end_col:
+                                    continue  # Only handle single-column ranges for now
+                                col_idx = openpyxl.utils.column_index_from_string(start_col)
+                                start_row = int(start_row)
+                                end_row = int(end_row)
+                                # Find actual data extent in this column
+                                data_rows = [r for r in range(1, max_row + 1) if sheet.cell(row=r, column=col_idx).value is not None]
+                                if not data_rows:
+                                    continue
+                                max_data_row = max(data_rows)
+                                if max_data_row > end_row:
+                                    # Data exists beyond the referenced range
+                                    extra_data_count = max_data_row - end_row
+                                    total_data_count = max_data_row - start_row + 1
+                                    probability = min(0.9, 0.5 + 0.4 * (extra_data_count / total_data_count))
+                                    from openpyxl.utils import get_column_letter
+                                    col_letter = get_column_letter(col_idx)
+                                    results.append(ErrorDetectionResult(
+                                        error_type=self.name,
+                                        description=f"Formula in {sheet_name}!{get_column_letter(col)}{row} references {col_letter}{start_row}:{col_letter}{end_row}, but data extends to row {max_data_row}.",
+                                        probability=probability,
+                                        severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                                        location=f"{sheet_name}!{get_column_letter(col)}{row}",
+                                        details={
+                                            'formula': formula,
+                                            'referenced_range': f"{col_letter}{start_row}:{col_letter}{end_row}",
+                                            'max_data_row': max_data_row,
+                                            'extra_data_count': extra_data_count
+                                        },
+                                        suggested_fix=f"Check if the aggregation formula should include data up to row {max_data_row}."
+                                    ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1842,6 +1904,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(IncompleteDragFormulaDetector())
     sniffer.register_detector(FalseRangeEndDetectionDetector())
     sniffer.register_detector(PartialFormulaPropagationDetector())
+    sniffer.register_detector(FormulaBoundaryMismatchDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
