@@ -1287,6 +1287,111 @@ class DataTypeInconsistenciesInLookupTablesDetector(ErrorDetector):
         return 0.0
 
 
+class ConditionalFormattingOverlapConflictsDetector(ErrorDetector):
+    """
+    Detector for overlapping/conflicting conditional formatting rules.
+    
+    Algorithm:
+    1. Extract all conditional formatting rules and their ranges
+    2. Detect overlapping ranges
+    3. Analyze rule types and formats for conflicts
+    4. Calculate probability based on severity of overlap/conflict
+    """
+    def __init__(self):
+        super().__init__(
+            name="conditional_formatting_overlap_conflicts",
+            description="Multiple conditional formatting rules that conflict or overlap",
+            severity=ErrorSeverity.MEDIUM
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            # 1. Extract all conditional formatting rules and their ranges
+            cf_rules = self._extract_conditional_formatting_rules(sheet)
+            # Compare all pairs, including rules within the same range
+            n = len(cf_rules)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    rule1 = cf_rules[i]
+                    rule2 = cf_rules[j]
+                    overlap_cells = rule1['cells'] & rule2['cells']
+                    if not overlap_cells:
+                        continue
+                    # 3. Analyze for conflicts
+                    conflict_type, probability = self._analyze_conflict(rule1, rule2)
+                    if probability > 0:
+                        results.append(ErrorDetectionResult(
+                            error_type=self.name,
+                            description=f"Conditional formatting overlap/conflict between rules on {sheet_name}: {rule1['range']} and {rule2['range']}",
+                            probability=probability,
+                            severity=self.severity,
+                            location=f"{sheet_name}!{rule1['range']} & {rule2['range']}",
+                            details={
+                                'rule1': rule1,
+                                'rule2': rule2,
+                                'overlap_cells': list(overlap_cells),
+                                'conflict_type': conflict_type
+                            },
+                            suggested_fix="Review overlapping conditional formatting rules and resolve conflicts."
+                        ))
+        return results
+
+    def _extract_conditional_formatting_rules(self, sheet) -> List[dict]:
+        # openpyxl stores conditional formatting in sheet.conditional_formatting
+        rules = []
+        cf = getattr(sheet, 'conditional_formatting', None)
+        if cf is None:
+            return rules
+        # Iterate over cf._cf_rules.items(), use cf_range.sqref for the range string
+        for cf_range, rule_list in cf._cf_rules.items():
+            range_str = str(getattr(cf_range, 'sqref', '')) if hasattr(cf_range, 'sqref') else None
+            if not range_str:
+                continue
+            from openpyxl.utils import range_boundaries, get_column_letter
+            try:
+                min_col, min_row, max_col, max_row = range_boundaries(range_str)
+            except Exception:
+                continue
+            cells = set()
+            for row in range(min_row, max_row + 1):
+                for col in range(min_col, max_col + 1):
+                    cell = f"{get_column_letter(col)}{row}"
+                    cells.add(cell)
+            for rule in rule_list:
+                rules.append({
+                    'range': range_str,
+                    'cells': cells,
+                    'type': getattr(rule, 'type', None),
+                    'formula': getattr(rule, 'formula', None),
+                    'dxf': getattr(rule, 'dxf', None),
+                    'priority': getattr(rule, 'priority', None),
+                    'rule_obj': rule
+                })
+        return rules
+
+    def _analyze_conflict(self, rule1: dict, rule2: dict) -> tuple:
+        # Check for type and format conflicts
+        type1 = rule1['type']
+        type2 = rule2['type']
+        dxf1 = rule1['dxf']
+        dxf2 = rule2['dxf']
+        # High probability: both set fill/font and are different
+        if dxf1 and dxf2:
+            fill1 = getattr(dxf1, 'fill', None)
+            fill2 = getattr(dxf2, 'fill', None)
+            font1 = getattr(dxf1, 'font', None)
+            font2 = getattr(dxf2, 'font', None)
+            if (fill1 and fill2 and fill1 != fill2) or (font1 and font2 and font1 != font2):
+                return ('conflicting_format', 0.9)
+        # Medium probability: different types (e.g., color scale vs formula)
+        if type1 != type2:
+            return ('different_types', 0.6)
+        # Low probability: overlap but compatible
+        return ('overlap', 0.3)
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1317,6 +1422,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(VolatileFunctionsDetector())
     sniffer.register_detector(CrossSheetReferenceErrorsDetector())
     sniffer.register_detector(DataTypeInconsistenciesInLookupTablesDetector())
+    sniffer.register_detector(ConditionalFormattingOverlapConflictsDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
