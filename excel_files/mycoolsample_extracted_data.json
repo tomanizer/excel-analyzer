@@ -1,0 +1,576 @@
+{
+  "metadata": {
+    "filename": "mycoolsample.xlsx",
+    "file_size": 16269,
+    "file_size_kb": 15.89,
+    "last_modified": "2025-07-24T22:47:49.853330",
+    "file_extension": ".xlsx",
+    "has_vba": false,
+    "sheet_count": 3,
+    "sheet_names": [
+      "Sheet1",
+      "Sheet2",
+      "Sheet3"
+    ]
+  },
+  "sheets": {
+    "Sheet1": {
+      "dimensions": {
+        "max_row": 13,
+        "max_column": 13,
+        "max_column_letter": "M"
+      },
+      "data": {
+        "C4": {
+          "value": "Test file",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "C6": {
+          "value": "This is my table",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D6": {
+          "value": "q1",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "E6": {
+          "value": "q2",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "F6": {
+          "value": "q3",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "G6": {
+          "value": "q5",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "C7": {
+          "value": "lala",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D7": {
+          "value": 345,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "E7": {
+          "value": 354354,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "F7": {
+          "value": 354,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "G7": {
+          "value": 354,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C8": {
+          "value": "bebe",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D8": {
+          "value": 345,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "E8": {
+          "value": 34,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "F8": {
+          "value": 354,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "G8": {
+          "value": 354,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "I12": {
+          "value": "Another table",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "J12": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "K12": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "L12": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "M12": {
+          "value": 423,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "I13": {
+          "value": 24,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "J13": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "K13": {
+          "value": 423,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "L13": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "M13": {
+          "value": 24,
+          "data_type": "int",
+          "is_formula": false
+        }
+      },
+      "formulas": {},
+      "tables": [],
+      "charts": [],
+      "data_validations": [],
+      "merged_cells": [],
+      "styles": {
+        "cells_with_styles": 26,
+        "cells_with_fonts": 26,
+        "cells_with_fills": 26,
+        "cells_with_borders": 26
+      },
+      "summary": {
+        "total_cells_with_data": 26,
+        "total_formulas": 0,
+        "total_tables": 0,
+        "total_charts": 0,
+        "total_validations": 0,
+        "total_merged_cells": 0,
+        "data_types": {
+          "str": 9,
+          "int": 17
+        },
+        "formula_functions": {}
+      }
+    },
+    "Sheet2": {
+      "dimensions": {
+        "max_row": 9,
+        "max_column": 14,
+        "max_column_letter": "N"
+      },
+      "data": {
+        "C2": {
+          "value": "etre",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D2": {
+          "value": "erte",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "J2": {
+          "value": "myflag",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "C3": {
+          "value": "lala",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D3": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C4": {
+          "value": "asd",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D4": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C5": {
+          "value": "asdads",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D5": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C6": {
+          "value": "sdfsdf",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D6": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C7": {
+          "value": "sdfsf",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D7": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "I7": {
+          "value": "etre",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "I8": {
+          "value": "asd",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "J8": {
+          "value": "asdads",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "K8": {
+          "value": "lala",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "L8": {
+          "value": "sdfsdf",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "M8": {
+          "value": "sdfsf",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "N8": {
+          "value": "Grand Total",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "H9": {
+          "value": "Sum of erte",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "I9": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "J9": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "K9": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "L9": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "M9": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "N9": {
+          "value": 1188,
+          "data_type": "int",
+          "is_formula": false
+        }
+      },
+      "formulas": {},
+      "tables": [],
+      "charts": [],
+      "data_validations": [],
+      "merged_cells": [],
+      "styles": {
+        "cells_with_styles": 27,
+        "cells_with_fonts": 27,
+        "cells_with_fills": 27,
+        "cells_with_borders": 27
+      },
+      "summary": {
+        "total_cells_with_data": 27,
+        "total_formulas": 0,
+        "total_tables": 0,
+        "total_charts": 0,
+        "total_validations": 0,
+        "total_merged_cells": 0,
+        "data_types": {
+          "str": 16,
+          "int": 11
+        },
+        "formula_functions": {}
+      }
+    },
+    "Sheet3": {
+      "dimensions": {
+        "max_row": 9,
+        "max_column": 5,
+        "max_column_letter": "E"
+      },
+      "data": {
+        "A1": {
+          "value": "asdads",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "B1": {
+          "value": "ads",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "C1": {
+          "value": "ads2",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D1": {
+          "value": "sfd",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "E1": {
+          "value": "ads3",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "A2": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "B2": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C2": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "D2": {
+          "value": 24,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "E2": {
+          "value": 423,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "A3": {
+          "value": 234,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "B3": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C3": {
+          "value": 24,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "D3": {
+          "value": 243,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "E3": {
+          "value": 24,
+          "data_type": "int",
+          "is_formula": false
+        },
+        "C9": {
+          "value": "indirect",
+          "data_type": "str",
+          "is_formula": false
+        },
+        "D9": {
+          "value": "<openpyxl.worksheet.formula.ArrayFormula object at 0x106958440>",
+          "data_type": "ArrayFormula",
+          "is_formula": true
+        }
+      },
+      "formulas": {
+        "D9": {
+          "formula": "<openpyxl.worksheet.formula.ArrayFormula object at 0x106958440>",
+          "calculated_value": "<openpyxl.worksheet.formula.ArrayFormula object at 0x106958440>"
+        }
+      },
+      "tables": [
+        {
+          "name": "Table1",
+          "range": "A1:E3",
+          "style": "TableStyleMedium2",
+          "show_first_column": false,
+          "show_last_column": false,
+          "show_row_stripes": true,
+          "show_column_stripes": false,
+          "data": {
+            "A1": {
+              "value": "asdads",
+              "formula": null
+            },
+            "B1": {
+              "value": "ads",
+              "formula": null
+            },
+            "C1": {
+              "value": "ads2",
+              "formula": null
+            },
+            "D1": {
+              "value": "sfd",
+              "formula": null
+            },
+            "E1": {
+              "value": "ads3",
+              "formula": null
+            },
+            "A2": {
+              "value": 243,
+              "formula": null
+            },
+            "B2": {
+              "value": 234,
+              "formula": null
+            },
+            "C2": {
+              "value": 243,
+              "formula": null
+            },
+            "D2": {
+              "value": 24,
+              "formula": null
+            },
+            "E2": {
+              "value": 423,
+              "formula": null
+            },
+            "A3": {
+              "value": 234,
+              "formula": null
+            },
+            "B3": {
+              "value": 243,
+              "formula": null
+            },
+            "C3": {
+              "value": 24,
+              "formula": null
+            },
+            "D3": {
+              "value": 243,
+              "formula": null
+            },
+            "E3": {
+              "value": 24,
+              "formula": null
+            }
+          }
+        }
+      ],
+      "charts": [],
+      "data_validations": [],
+      "merged_cells": [],
+      "styles": {
+        "cells_with_styles": 17,
+        "cells_with_fonts": 17,
+        "cells_with_fills": 17,
+        "cells_with_borders": 17
+      },
+      "summary": {
+        "total_cells_with_data": 17,
+        "total_formulas": 1,
+        "total_tables": 1,
+        "total_charts": 0,
+        "total_validations": 0,
+        "total_merged_cells": 0,
+        "data_types": {
+          "str": 6,
+          "int": 10,
+          "ArrayFormula": 1
+        },
+        "formula_functions": {}
+      }
+    }
+  },
+  "global_features": {
+    "named_ranges": {
+      "mycoolrange": [
+        "Sheet2!$C$2:$C$7"
+      ]
+    },
+    "external_links": [],
+    "properties": {}
+  },
+  "relationships": {
+    "cross_sheet_references": [],
+    "external_references": [],
+    "circular_references": []
+  },
+  "summary": {
+    "total_sheets": 3,
+    "total_cells_with_data": 70,
+    "total_formulas": 1,
+    "total_tables": 1,
+    "total_charts": 0,
+    "total_named_ranges": 1,
+    "total_external_links": 0,
+    "total_cross_sheet_references": 0,
+    "data_types_summary": {
+      "str": 31,
+      "int": 38,
+      "ArrayFormula": 1
+    },
+    "formula_functions_summary": {},
+    "complexity_score": 65
+  }
+}

@@ -117,7 +117,7 @@ The test files collectively test all major features of the excel parser:
 ### Running Individual Tests
 ```bash
 # Test a specific file
-python -c "from excel_parser import analyze_workbook_final; from pathlib import Path; analyze_workbook_final(Path('test_files/simple_model.xlsx'))"
+python -c "from src.excel_analyzer import analyze_workbook_final; from pathlib import Path; analyze_workbook_final(Path('test_files/simple_model.xlsx'))"
 ```
 
 ### Running All Tests

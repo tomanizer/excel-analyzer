@@ -3343,6 +3343,396 @@ class ArrayFormulaAnchoringDetector(ErrorDetector):
         return min(0.9, base_prob)
 
 
+class CrossSheetAnchoringDetector(ErrorDetector):
+    """
+    Detects wrong anchoring when referencing other sheets.
+    
+    Cross-sheet references need special consideration for anchoring:
+    - When copying across: References should be column-locked (Sheet1!$A1)
+    - When copying down: References should be row-locked (Sheet1!A$1)  
+    - When copying both directions: References should be relative (Sheet1!A1)
+    - Fixed references: Should be fully locked (Sheet1!$A$1)
+    """
+    
+    def __init__(self):
+        super().__init__(
+            name="cross_sheet_anchoring_errors",
+            description="Wrong anchoring when referencing other sheets",
+            severity=ErrorSeverity.MEDIUM
+        )
+    
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        """Detect cross-sheet anchoring errors."""
+        results = []
+        
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value)
+                        cross_sheet_errors = self._find_cross_sheet_anchoring_errors(
+                            workbook, sheet, formula, row, col
+                        )
+                        
+                        for error in cross_sheet_errors:
+                            probability = self._calculate_cross_sheet_error_probability(
+                                workbook, sheet, error, row, col
+                            )
+                            if probability > 0.5:
+                                from openpyxl.utils import get_column_letter
+                                col_letter = get_column_letter(col)
+                                results.append(ErrorDetectionResult(
+                                    error_type=self.name,
+                                    description=error['description'],
+                                    probability=probability,
+                                    severity=self.severity if probability >= 0.7 else ErrorSeverity.LOW,
+                                    location=f"{sheet_name}!{col_letter}{row}",
+                                    details=error['details'],
+                                    suggested_fix=error['suggested_fix']
+                                ))
+        
+        return results
+    
+    def _find_cross_sheet_anchoring_errors(self, workbook, sheet, formula: str, current_row: int, current_col: int) -> List[dict]:
+        """Find cross-sheet anchoring errors in the formula."""
+        errors = []
+        
+        # Extract cross-sheet references
+        cross_sheet_refs = self._extract_cross_sheet_references(formula)
+        
+        for ref_info in cross_sheet_refs:
+            sheet_name, cell_ref = ref_info['sheet_name'], ref_info['cell_ref']
+            
+            # Check if the referenced sheet exists
+            if sheet_name not in workbook.sheetnames:
+                continue
+            
+            ref_sheet = workbook[sheet_name]
+            expected_anchoring = self._determine_expected_cross_sheet_anchoring(
+                workbook, sheet, ref_sheet, cell_ref, current_row, current_col
+            )
+            actual_anchoring = self._get_anchoring_type_from_ref(cell_ref)
+            
+            if expected_anchoring != actual_anchoring:
+                expected_ref = self._suggest_correct_cross_sheet_reference(
+                    cell_ref, expected_anchoring
+                )
+                expected_formula = self._suggest_correct_cross_sheet_formula(
+                    formula, ref_info['full_ref'], expected_ref, sheet_name
+                )
+                
+                errors.append({
+                    'description': f"Wrong cross-sheet anchoring: {sheet_name}!{cell_ref} should be {sheet_name}!{expected_ref}",
+                    'details': {
+                        'formula': formula,
+                        'cross_sheet_reference': f"{sheet_name}!{cell_ref}",
+                        'expected_reference': f"{sheet_name}!{expected_ref}",
+                        'expected_formula': expected_formula,
+                        'current_anchoring': actual_anchoring,
+                        'expected_anchoring': expected_anchoring,
+                        'current_row': current_row,
+                        'current_col': current_col,
+                        'referenced_sheet': sheet_name
+                    },
+                    'suggested_fix': f"Update cross-sheet reference: {expected_formula}"
+                })
+        
+        return errors
+    
+    def _extract_cross_sheet_references(self, formula: str) -> List[dict]:
+        """Extract cross-sheet references from formula."""
+        refs = []
+        
+        # Pattern for quoted sheet names: 'Sheet Name'!A1 or 'Sheet Name'!A1:B3
+        quoted_pattern = r"'([^']+)'!(\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?)"
+        quoted_matches = re.findall(quoted_pattern, formula)
+        for sheet_name, cell_ref in quoted_matches:
+            refs.append({
+                'sheet_name': sheet_name,
+                'cell_ref': cell_ref,
+                'full_ref': f"'{sheet_name}'!{cell_ref}"
+            })
+        
+        # Pattern for unquoted sheet names: SheetName!A1 or SheetName!A1:B3
+        unquoted_pattern = r'([A-Za-z][A-Za-z0-9_]*?)!(\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?)'
+        unquoted_matches = re.findall(unquoted_pattern, formula)
+        for sheet_name, cell_ref in unquoted_matches:
+            # Skip if this is already captured as a quoted reference
+            if not any(ref['sheet_name'] == sheet_name and ref['cell_ref'] == cell_ref for ref in refs):
+                refs.append({
+                    'sheet_name': sheet_name,
+                    'cell_ref': cell_ref,
+                    'full_ref': f"{sheet_name}!{cell_ref}"
+                })
+        
+        return refs
+    
+    def _determine_expected_cross_sheet_anchoring(self, workbook, current_sheet, ref_sheet, cell_ref: str, current_row: int, current_col: int) -> str:
+        """Determine the expected anchoring for a cross-sheet reference."""
+        # Parse the cell reference
+        ref_col, ref_row = self._parse_cell_reference(cell_ref)
+        
+        # Check if this is a fixed reference (like a constant or header)
+        if self._is_fixed_cross_sheet_reference(ref_sheet, ref_col, ref_row):
+            return "fully_locked"
+        
+        # Check if this is part of a range in a function (like VLOOKUP, SUM, etc.)
+        if self._is_part_of_function_range(current_sheet, current_row, current_col):
+            return "relative"  # Ranges in functions should typically be relative
+        
+        # Determine copy direction based on context
+        copy_direction = self._determine_cross_sheet_copy_direction(
+            workbook, current_sheet, current_row, current_col
+        )
+        
+        if copy_direction == "across":
+            return "column_locked"
+        elif copy_direction == "down":
+            return "row_locked"
+        elif copy_direction == "both":
+            return "relative"
+        else:
+            return "relative"  # Default to relative
+    
+    def _is_fixed_cross_sheet_reference(self, ref_sheet, ref_col: int, ref_row: int) -> bool:
+        """Check if a cross-sheet reference should be fixed."""
+        try:
+            cell = ref_sheet.cell(row=ref_row, column=ref_col)
+            
+            # Check if it's a header row (row 1)
+            if ref_row == 1:
+                return True
+            
+            # Check if it's a constant value (same value in multiple cells)
+            if cell.value is not None:
+                constant_count = 0
+                total_cells = 0
+                
+                # Check the column for consistency
+                for row in range(1, min(ref_row + 10, ref_sheet.max_row + 1)):
+                    check_cell = ref_sheet.cell(row=row, column=ref_col)
+                    if check_cell.value is not None:
+                        total_cells += 1
+                        if check_cell.value == cell.value:
+                            constant_count += 1
+                
+                # If more than 50% of cells have the same value, consider it fixed
+                if total_cells > 0 and (constant_count / total_cells) > 0.5:
+                    return True
+            
+            return False
+        except:
+            return False
+    
+    def _determine_cross_sheet_copy_direction(self, workbook, sheet, row: int, col: int) -> str:
+        """Determine the likely copy direction for cross-sheet formulas."""
+        # Check if this cell is part of a copied pattern
+        copied_pattern = self._find_cross_sheet_copied_pattern(sheet, row, col)
+        
+        if copied_pattern:
+            return copied_pattern['direction']
+        
+        # Default based on position and surrounding formulas
+        return self._guess_cross_sheet_copy_direction(sheet, row, col)
+    
+    def _find_cross_sheet_copied_pattern(self, sheet, row: int, col: int) -> Optional[dict]:
+        """Find if the cell is part of a copied pattern with cross-sheet references."""
+        # Look for similar formulas in adjacent cells
+        similar_formulas = []
+        
+        # Check horizontal pattern (copying across)
+        for c in range(max(1, col - 3), min(col + 4, sheet.max_column + 1)):
+            if c != col:
+                cell = sheet.cell(row=row, column=c)
+                if cell.data_type == 'f' and cell.value:
+                    if self._has_cross_sheet_reference(str(cell.value)):
+                        similar_formulas.append({
+                            'col': c,
+                            'row': row,
+                            'formula': str(cell.value)
+                        })
+        
+        # Check vertical pattern (copying down)
+        for r in range(max(1, row - 3), min(row + 4, sheet.max_row + 1)):
+            if r != row:
+                cell = sheet.cell(row=r, column=col)
+                if cell.data_type == 'f' and cell.value:
+                    if self._has_cross_sheet_reference(str(cell.value)):
+                        similar_formulas.append({
+                            'col': col,
+                            'row': r,
+                            'formula': str(cell.value)
+                        })
+        
+        if len(similar_formulas) >= 2:
+            # Determine direction based on pattern
+            horizontal_count = len([f for f in similar_formulas if f['row'] == row])
+            vertical_count = len([f for f in similar_formulas if f['col'] == col])
+            
+            if horizontal_count > vertical_count:
+                return {'direction': 'across', 'count': horizontal_count}
+            elif vertical_count > horizontal_count:
+                return {'direction': 'down', 'count': vertical_count}
+            else:
+                return {'direction': 'both', 'count': len(similar_formulas)}
+        
+        return None
+    
+    def _has_cross_sheet_reference(self, formula: str) -> bool:
+        """Check if formula contains cross-sheet references."""
+        return bool(re.search(r"'?[^']+'?!", formula))
+    
+    def _guess_cross_sheet_copy_direction(self, sheet, row: int, col: int) -> str:
+        """Guess copy direction based on cell position and context."""
+        # If near the top, likely copying down
+        if row <= 3:
+            return "down"
+        # If near the left, likely copying across
+        elif col <= 3:
+            return "across"
+        # Default to both directions
+        else:
+            return "both"
+    
+    def _parse_cell_reference(self, cell_ref: str) -> Tuple[int, int]:
+        """Parse cell reference to get column and row numbers."""
+        # Remove any anchoring symbols
+        clean_ref = cell_ref.replace('$', '')
+        
+        # Extract column letters and row number
+        col_match = re.match(r'([A-Z]+)', clean_ref)
+        row_match = re.search(r'(\d+)$', clean_ref)
+        
+        if col_match and row_match:
+            col_letters = col_match.group(1)
+            row_num = int(row_match.group(1))
+            col_num = openpyxl.utils.column_index_from_string(col_letters)
+            return col_num, row_num
+        
+        return 1, 1  # Default fallback
+    
+    def _get_anchoring_type_from_ref(self, cell_ref: str) -> str:
+        """Get anchoring type from cell reference."""
+        if cell_ref.startswith('$') and '$' in cell_ref[1:]:
+            return "fully_locked"
+        elif cell_ref.startswith('$'):
+            return "column_locked"
+        elif '$' in cell_ref:
+            return "row_locked"
+        else:
+            return "relative"
+    
+    def _suggest_correct_cross_sheet_reference(self, cell_ref: str, expected_anchoring: str) -> str:
+        """Suggest the correct cross-sheet reference with proper anchoring."""
+        # Remove existing anchoring
+        clean_ref = cell_ref.replace('$', '')
+        
+        # Extract column letters and row number
+        col_match = re.match(r'([A-Z]+)', clean_ref)
+        row_match = re.search(r'(\d+)$', clean_ref)
+        
+        if not col_match or not row_match:
+            return cell_ref  # Return original if parsing fails
+        
+        col_letters = col_match.group(1)
+        row_num = row_match.group(1)
+        
+        # Add appropriate anchoring
+        if expected_anchoring == "fully_locked":
+            return f"${col_letters}${row_num}"
+        elif expected_anchoring == "column_locked":
+            return f"${col_letters}{row_num}"
+        elif expected_anchoring == "row_locked":
+            return f"{col_letters}${row_num}"
+        else:  # relative
+            return f"{col_letters}{row_num}"
+    
+    def _suggest_correct_cross_sheet_formula(self, formula: str, current_ref: str, expected_ref: str, sheet_name: str) -> str:
+        """Suggest the correct formula with proper cross-sheet anchoring."""
+        # Extract the cell reference part from current_ref
+        cell_ref_match = re.search(r'!(\$?[A-Z]+\$?\d+)$', current_ref)
+        if not cell_ref_match:
+            return formula
+        
+        current_cell_ref = cell_ref_match.group(1)
+        
+        # Handle both quoted and unquoted sheet names
+        if "'" in current_ref:
+            # Quoted sheet name
+            old_pattern = f"'{sheet_name}'!{current_cell_ref}"
+            new_pattern = f"'{sheet_name}'!{expected_ref}"
+        else:
+            # Unquoted sheet name
+            old_pattern = f"{sheet_name}!{current_cell_ref}"
+            new_pattern = f"{sheet_name}!{expected_ref}"
+        
+        return formula.replace(old_pattern, new_pattern)
+    
+    def _calculate_cross_sheet_error_probability(self, workbook, sheet, error: dict, current_row: int, current_col: int) -> float:
+        """Calculate probability for cross-sheet anchoring error."""
+        base_prob = 0.6
+        
+        # Higher probability for critical calculations
+        if self._is_critical_cross_sheet_calculation(sheet, current_row, current_col):
+            base_prob += 0.2
+        
+        # Higher probability for complex cross-sheet references
+        if self._is_complex_cross_sheet_reference(error['details']['formula']):
+            base_prob += 0.1
+        
+        # Higher probability for frequently copied patterns
+        copied_pattern = self._find_cross_sheet_copied_pattern(sheet, current_row, current_col)
+        if copied_pattern and copied_pattern['count'] > 3:
+            base_prob += 0.1
+        
+        # Higher probability for wrong anchoring type
+        current_anchoring = error['details']['current_anchoring']
+        expected_anchoring = error['details']['expected_anchoring']
+        
+        if current_anchoring == "fully_locked" and expected_anchoring != "fully_locked":
+            base_prob += 0.1
+        elif current_anchoring == "relative" and expected_anchoring in ["column_locked", "row_locked"]:
+            base_prob += 0.1
+        
+        return min(0.9, base_prob)
+    
+    def _is_critical_cross_sheet_calculation(self, sheet, row: int, col: int) -> bool:
+        """Check if this is a critical cross-sheet calculation."""
+        cell = sheet.cell(row=row, column=col)
+        if not cell.data_type == 'f':
+            return False
+        
+        formula = str(cell.value).upper()
+        
+        # Critical functions that often use cross-sheet references
+        critical_functions = ['VLOOKUP', 'HLOOKUP', 'INDEX', 'MATCH', 'SUMIF', 'COUNTIF', 'AVERAGEIF']
+        
+        return any(func in formula for func in critical_functions)
+    
+    def _is_part_of_function_range(self, sheet, row: int, col: int) -> bool:
+        """Check if the cell is part of a function range."""
+        cell = sheet.cell(row=row, column=col)
+        if not cell.data_type == 'f':
+            return False
+        
+        formula = str(cell.value).upper()
+        
+        # Functions that typically use ranges
+        range_functions = ['VLOOKUP', 'HLOOKUP', 'SUM', 'AVERAGE', 'COUNT', 'MAX', 'MIN', 'INDEX', 'MATCH']
+        
+        return any(func in formula for func in range_functions)
+    
+    def _is_complex_cross_sheet_reference(self, formula: str) -> bool:
+        """Check if formula has complex cross-sheet references."""
+        cross_sheet_refs = self._extract_cross_sheet_references(formula)
+        return len(cross_sheet_refs) > 1
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -3389,6 +3779,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(InconsistentAnchoringInRangesDetector())
     sniffer.register_detector(LookupFunctionAnchoringDetector())
     sniffer.register_detector(ArrayFormulaAnchoringDetector())
+    sniffer.register_detector(CrossSheetAnchoringDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
