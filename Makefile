@@ -201,3 +201,28 @@ error-sniffer-batch:
 
 error-sniffer-comprehensive:
 	excel-error-sniffer excel_files/complex_model.xlsx --json --markdown --verbose --timing --output-dir ./error_reports
+
+# Click CLI Error Detection examples
+click-error-sniff-help:
+	excel-analyzer-click error-sniff --help
+
+click-error-sniff-basic:
+	excel-analyzer-click error-sniff excel_files/simple_model.xlsx --summary
+
+click-error-sniff-full:
+	excel-analyzer-click error-sniff excel_files/simple_model.xlsx --json --markdown --verbose --timing
+
+click-detect-errors-help:
+	excel-analyzer-click detect-errors --help
+
+click-detect-errors-basic:
+	excel-analyzer-click detect-errors excel_files/simple_model.xlsx --summary
+
+click-detect-errors-full:
+	excel-analyzer-click detect-errors excel_files/simple_model.xlsx --json --markdown --verbose --timing
+
+click-detect-errors-low-threshold:
+	excel-analyzer-click detect-errors excel_files/simple_model.xlsx --error-threshold 0.3 --summary --verbose
+
+click-detect-errors-batch:
+	excel-analyzer-click detect-errors "excel_files/*.xlsx" --output-dir ./click_error_reports --json --summary --verbose
