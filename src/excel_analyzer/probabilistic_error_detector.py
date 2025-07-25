@@ -1945,6 +1945,79 @@ class CopyPasteFormulaGapsDetector(ErrorDetector):
         return clean1 == clean2
 
 
+class FormulaRangeVsDataRangeDiscrepancyDetector(ErrorDetector):
+    def __init__(self):
+        super().__init__(
+            name="formula_range_vs_data_range_discrepancy",
+            description="Lookup formula references a range that does not cover all data (range vs data mismatch)",
+            severity=ErrorSeverity.HIGH
+        )
+
+    def detect(self, workbook: openpyxl.Workbook, **kwargs) -> List[ErrorDetectionResult]:
+        results = []
+        lookup_funcs = ["VLOOKUP", "HLOOKUP", "XLOOKUP", "INDEX", "MATCH"]
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            max_row = sheet.max_row
+            max_col = sheet.max_column
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    cell = sheet.cell(row=row, column=col)
+                    if cell.data_type == 'f' and cell.value:
+                        formula = str(cell.value).upper()
+                        for func in lookup_funcs:
+                            if func in formula:
+                                # Extract range, e.g., VLOOKUP(A1,A1:B50,2)
+                                import re
+                                match = re.search(r"([A-Z]+)(\d+):([A-Z]+)(\d+)", formula)
+                                if not match:
+                                    continue
+                                start_col, start_row, end_col, end_row = match.groups()
+                                col_start_idx = openpyxl.utils.column_index_from_string(start_col)
+                                col_end_idx = openpyxl.utils.column_index_from_string(end_col)
+                                start_row = int(start_row)
+                                end_row = int(end_row)
+                                # Check if data extends beyond the referenced range
+                                data_beyond = False
+                                max_data_row = end_row
+                                max_data_col = col_end_idx
+                                for r in range(end_row + 1, max_row + 1):
+                                    for c in range(col_start_idx, col_end_idx + 1):
+                                        if sheet.cell(row=r, column=c).value is not None:
+                                            data_beyond = True
+                                            max_data_row = max(max_data_row, r)
+                                for c in range(col_end_idx + 1, max_col + 1):
+                                    for r in range(start_row, end_row + 1):
+                                        if sheet.cell(row=r, column=c).value is not None:
+                                            data_beyond = True
+                                            max_data_col = max(max_data_col, c)
+                                if data_beyond:
+                                    extra_rows = max_data_row - end_row
+                                    extra_cols = max_data_col - col_end_idx
+                                    probability = min(0.9, 0.5 + 0.4 * ((extra_rows + extra_cols) / (end_row - start_row + 1 + col_end_idx - col_start_idx + 1)))
+                                    from openpyxl.utils import get_column_letter
+                                    start_col_letter = get_column_letter(col_start_idx)
+                                    end_col_letter = get_column_letter(col_end_idx)
+                                    max_data_col_letter = get_column_letter(max_data_col)
+                                    results.append(ErrorDetectionResult(
+                                        error_type=self.name,
+                                        description=f"Lookup formula in {sheet_name}!{get_column_letter(col)}{row} references {start_col_letter}{start_row}:{end_col_letter}{end_row}, but data extends to {max_data_col_letter}{max_data_row}.",
+                                        probability=probability,
+                                        severity=self.severity if probability >= 0.7 else ErrorSeverity.MEDIUM,
+                                        location=f"{sheet_name}!{get_column_letter(col)}{row}",
+                                        details={
+                                            'formula': formula,
+                                            'referenced_range': f"{start_col_letter}{start_row}:{end_col_letter}{end_row}",
+                                            'max_data_row': max_data_row,
+                                            'max_data_col': max_data_col,
+                                            'extra_rows': extra_rows,
+                                            'extra_cols': extra_cols
+                                        },
+                                        suggested_fix=f"Check if the lookup range should include data up to {max_data_col_letter}{max_data_row}."
+                                    ))
+        return results
+
+
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
@@ -1983,6 +2056,7 @@ def detect_excel_errors_probabilistic(
     sniffer.register_detector(PartialFormulaPropagationDetector())
     sniffer.register_detector(FormulaBoundaryMismatchDetector())
     sniffer.register_detector(CopyPasteFormulaGapsDetector())
+    sniffer.register_detector(FormulaRangeVsDataRangeDiscrepancyDetector())
     
     # Run detection
     results = sniffer.detect_all_errors()
